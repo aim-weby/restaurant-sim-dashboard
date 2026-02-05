@@ -98,3 +98,19 @@ export type Venue = {
     tables_count: number;
     mode: string;
 };
+
+export type BaselineKpisResponse = {
+    baseline_week_id: number;
+    kpis: Record<string, number>;
+    inputs_used: Record<string, any>;
+};
+
+export type BaselineGridCell = {
+    id: number;
+    baseline_week_id: number;
+    weekday: number; // 0..6
+    daypart_id: number;
+    arrivals_groups: number;
+    avg_spend: number;
+    avg_party_size: number;
+};

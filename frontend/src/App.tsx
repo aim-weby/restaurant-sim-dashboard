@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./layout/Layout";
 
+import DashboardPage from "./pages/DashboardPage";
 import BaselineWeeksPage from "./pages/BaselineWeeksPage";
 import BaselineGridPage from "./pages/BaselineGridPage";
 import BaselineKpisPage from "./pages/BaselineKpisPage";
@@ -17,6 +18,8 @@ export default function App() {
         <Routes>
             <Route element={<Layout />}>
                 <Route path="/" element={<Navigate to="/baseline-weeks" replace />} />
+
+                <Route path="/baseline-weeks/:weekId/dashboard" element={<DashboardPage />} />
 
                 <Route path="/baseline-weeks" element={<BaselineWeeksPage />} />
                 <Route path="/baseline-weeks/:weekId/grid" element={<BaselineGridPage />} />

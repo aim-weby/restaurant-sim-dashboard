@@ -1,19 +1,9 @@
 import { useMemo, useState } from "react";
-
-const API_BASE = "http://127.0.0.1:8000";
+import { Link, useSearchParams } from "react-router-dom";
+import { api } from "../api/endpoints";
+import type { SimulationResponse } from "../api/types";
 
 type MetricSummary = { mean: number; p10: number; p50: number; p90: number };
-
-type SimulationResponse = {
-    baseline_week_id: number;
-    week_start: string;
-    overrides: any;
-    result: {
-        runs: number;
-        metrics: Record<string, MetricSummary>;
-        assumptions: Record<string, any>;
-    };
-};
 
 type Scenario = {
     key: string;
@@ -35,10 +25,13 @@ function fmtValue(metric: string, v: number) {
 
 function metric(result: SimulationResponse | null, key: string): MetricSummary | null {
     if (!result) return null;
-    return result.result.metrics[key] ?? null;
+    return (result.result.metrics[key] as MetricSummary) ?? null;
 }
 
-export default function SimulationPage(props: { baselineWeekId: number | null }) {
+export default function SimulationPage() {
+    const [sp] = useSearchParams();
+    const baselineWeekId = sp.get("weekId") ? Number(sp.get("weekId")) : null;
+
     const [runs, setRuns] = useState(300);
     const [seed, setSeed] = useState<number | "">(42);
     const [arrivalsSigma, setArrivalsSigma] = useState(0.2);
@@ -46,10 +39,8 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
 
     const [error, setError] = useState<string | null>(null);
     const [runningKey, setRunningKey] = useState<string | null>(null);
-
     const [results, setResults] = useState<Record<string, SimulationResponse>>({});
 
-    // ---- default scenarios (weekday: 5=Sat; daypart_id: 2=Dinner) ----
     const scenarios: Scenario[] = useMemo(() => {
         return [
             {
@@ -71,9 +62,7 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
                     spend_multiplier: 1.0,
                     food_cost_pct_override: null,
                     fixed_cost_week_override: null,
-                    staffing_delta: [
-                        { weekday: 5, daypart_id: 2, role: "kitchen", staff_count_delta: 1 },
-                    ],
+                    staffing_delta: [{ weekday: 5, daypart_id: 2, role: "kitchen", staff_count_delta: 1 }],
                 },
             },
             {
@@ -91,33 +80,24 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
     }, []);
 
     async function runScenario(s: Scenario) {
-        if (!props.baselineWeekId) {
-            setError("Select a baseline week first (Baseline weeks → Open grid).");
+        if (!baselineWeekId || Number.isNaN(baselineWeekId)) {
+            setError("Missing weekId. Open simulation from a week (Weeks → Simulate) or use /simulation?weekId=1.");
             return;
         }
+
         setRunningKey(s.key);
         setError(null);
 
         try {
-            const res = await fetch(`${API_BASE}/simulation/run`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    baseline_week_id: props.baselineWeekId,
-                    runs,
-                    seed: seed === "" ? null : Number(seed),
-                    arrivals_sigma: arrivalsSigma,
-                    spend_sigma: spendSigma,
-                    overrides: s.overrides,
-                }),
+            const json = await api.runSimulation({
+                baseline_week_id: baselineWeekId,
+                runs,
+                seed: seed === "" ? null : Number(seed),
+                arrivals_sigma: arrivalsSigma,
+                spend_sigma: spendSigma,
+                overrides: s.overrides,
             });
 
-            if (!res.ok) {
-                const text = await res.text();
-                throw new Error(`HTTP ${res.status}: ${text}`);
-            }
-
-            const json = (await res.json()) as SimulationResponse;
             setResults((prev) => ({ ...prev, [s.key]: json }));
         } catch (e) {
             setError(String(e));
@@ -134,6 +114,17 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
 
     return (
         <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 1200 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <Link to="/baseline-weeks">← Weeks</Link>
+                {baselineWeekId && !Number.isNaN(baselineWeekId) && (
+                    <>
+                        <Link to={`/baseline-weeks/${baselineWeekId}/grid`}>Grid</Link>
+                        <Link to={`/baseline-weeks/${baselineWeekId}/kpis`}>KPI</Link>
+                        <Link to={`/baseline-weeks/${baselineWeekId}/scenarios`}>Scenarios</Link>
+                    </>
+                )}
+            </div>
+
             <h1>Simulation – Scenario compare</h1>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginTop: 12 }}>
@@ -179,7 +170,7 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
 
             <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
                 <div style={{ color: "#666", fontSize: 12 }}>
-                    Baseline week selected: <b>{props.baselineWeekId ?? "none"}</b>
+                    Baseline week selected: <b>{baselineWeekId ?? "none"}</b>
                 </div>
                 <button onClick={clearResults}>Clear results</button>
             </div>
@@ -190,14 +181,9 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
                 {scenarios.map((s) => (
                     <div key={s.key} style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
                         <div style={{ fontWeight: 700 }}>{s.name}</div>
-                        <div style={{ color: "#666", fontSize: 12, marginTop: 6 }}>
-                            {s.key}
-                        </div>
-                        <button
-                            style={{ marginTop: 10 }}
-                            onClick={() => runScenario(s)}
-                            disabled={runningKey !== null}
-                        >
+                        <div style={{ color: "#666", fontSize: 12, marginTop: 6 }}>{s.key}</div>
+
+                        <button style={{ marginTop: 10 }} onClick={() => runScenario(s)} disabled={runningKey !== null}>
                             {runningKey === s.key ? "Running…" : "Run"}
                         </button>
 
@@ -210,7 +196,6 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
                 ))}
             </div>
 
-            {/* Compare table */}
             <div style={{ marginTop: 18, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
                 <h3 style={{ marginTop: 0 }}>Compare</h3>
 
@@ -227,7 +212,9 @@ export default function SimulationPage(props: { baselineWeekId: number | null })
                         <tbody>
                         {compareKeys.map((m) => (
                             <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                                <td><code>{m}</code></td>
+                                <td>
+                                    <code>{m}</code>
+                                </td>
                                 {scenarios.map((s) => {
                                     const r = metric(results[s.key] ?? null, m);
                                     if (!r) return <td key={s.key} style={{ color: "#999" }}>—</td>;

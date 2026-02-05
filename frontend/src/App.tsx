@@ -1,5 +1,5 @@
-import VenueSettingsPage from "./pages/VenueSettingsPage";
+import DaypartsPage from "./pages/DaypartsPage";
 
 export default function App() {
-    return <VenueSettingsPage />;
+    return <DaypartsPage />;
 }

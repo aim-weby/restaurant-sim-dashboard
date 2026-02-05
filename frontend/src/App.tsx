@@ -4,8 +4,9 @@ import BaselineGridPage from "./pages/BaselineGridPage";
 import BaselineKpisPage from "./pages/BaselineKpisPage";
 import CostsSettingsPage from "./pages/CostsSettingsPage";
 import StaffingPage from "./pages/StaffingPage";
+import SimulationPage from "./pages/SimulationPage";
 
-type View = "weeks" | "grid" | "kpis" | "costs" | "staffing";
+type View = "weeks" | "grid" | "kpis" | "costs" | "staffing" | "simulation";
 
 export default function App() {
     const [view, setView] = useState<View>("weeks");
@@ -17,6 +18,7 @@ export default function App() {
                 <button onClick={() => setView("weeks")}>Baseline weeks</button>
                 <button onClick={() => setView("costs")}>Costs</button>
                 <button onClick={() => setView("staffing")}>Staffing</button>
+                <button onClick={() => setView("simulation")}>Simulation</button>
                 {weekId !== null && <button onClick={() => setView("grid")}>Grid (week #{weekId})</button>}
                 {weekId !== null && <button onClick={() => setView("kpis")}>KPI (week #{weekId})</button>}
             </div>
@@ -37,6 +39,15 @@ export default function App() {
             <>
                 <Nav />
                 <StaffingPage onBack={() => setView("weeks")} />
+            </>
+        );
+    }
+
+    if (view === "simulation") {
+        return (
+            <>
+                <Nav />
+                <SimulationPage baselineWeekId={weekId} />
             </>
         );
     }

@@ -9,6 +9,8 @@ from app.schemas.baseline import (
     BaselineWeekOut, BaselineWeekCreate, BaselineWeekUpdate,
     BaselineCellOut, BaselineCellUpsert
 )
+from app.models.cost_settings import CostSettings
+from app.models.staffing_plan import StaffingPlan
 
 router = APIRouter(prefix="/baseline-weeks", tags=["baseline"])
 
@@ -100,7 +102,6 @@ def upsert_week_data(week_id: int, payload: list[BaselineCellUpsert], db: Sessio
 
 @router.get("/{week_id}/kpis")
 def get_week_kpis(week_id: int, db: Session = Depends(get_db)):
-    # Načti všechny uložené buňky
     rows = (
         db.query(BaselineDaypartData)
         .filter(BaselineDaypartData.baseline_week_id == week_id)
@@ -114,11 +115,39 @@ def get_week_kpis(week_id: int, db: Session = Depends(get_db)):
         arrivals_total += r.arrivals_groups
         revenue += r.arrivals_groups * r.avg_spend_per_group
 
-    # prozatím: jen finance.revenue a demand.arrivals_groups
+    # costs settings (singleton)
+    costs = db.query(CostSettings).first()
+    fixed_cost_week = costs.fixed_cost_week if costs else 0.0
+    food_cost_pct = costs.food_cost_pct if costs else 0.30
+
+    cogs = revenue * food_cost_pct
+
+    # labor (sum staffing_plan)
+    labor_cost = 0.0
+    staffing_rows = db.query(StaffingPlan).all()
+    for s in staffing_rows:
+        labor_cost += s.staff_count * s.hourly_rate * s.hours_in_daypart
+
+    profit = revenue - cogs - labor_cost - fixed_cost_week
+    profit_margin = (profit / revenue) if revenue > 0 else 0.0
+    labor_ratio = (labor_cost / revenue) if revenue > 0 else 0.0
+    prime_cost_ratio = ((cogs + labor_cost) / revenue) if revenue > 0 else 0.0
+
     return {
         "baseline_week_id": week_id,
         "kpis": {
             "finance.revenue": revenue,
-            "demand.arrivals_groups": arrivals_total
+            "finance.cogs": cogs,
+            "finance.labor_cost": labor_cost,
+            "finance.fixed_cost": fixed_cost_week,
+            "finance.profit": profit,
+            "finance.profit_margin": profit_margin,
+            "finance.labor_cost_ratio": labor_ratio,
+            "finance.prime_cost_ratio": prime_cost_ratio,
+            "demand.arrivals_groups": arrivals_total,
+        },
+        "inputs_used": {
+            "food_cost_pct": food_cost_pct,
+            "fixed_cost_week": fixed_cost_week
         }
     }

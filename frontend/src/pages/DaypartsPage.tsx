@@ -35,7 +35,7 @@ export default function DaypartsPage() {
             // pozor: v api/endpoints.ts zatím nemáš createDaypart/updateDaypart/deleteDaypart
             // takže použijeme fetchJson přímo nebo doplníme endpoints. Nejčistší je doplnit endpoints.
             // Pro teď použijeme fetchJson přes api layer rozšířením: viz níže v poznámce.
-            await (api as any).createDaypart({
+            await api.createDaypart({
                 label: newLabel.trim(),
                 start_time: newStart,
                 end_time: newEnd,
@@ -52,7 +52,7 @@ export default function DaypartsPage() {
     async function saveDaypart(dp: Daypart) {
         setError(null);
         try {
-            await (api as any).updateDaypart(dp.id, {
+            await api.updateDaypart(dp.id, {
                 label: dp.label,
                 start_time: dp.start_time,
                 end_time: dp.end_time,
@@ -68,7 +68,7 @@ export default function DaypartsPage() {
         if (!confirm("Delete this daypart?")) return;
         setError(null);
         try {
-            await (api as any).deleteDaypart(id);
+            await api.deleteDaypart(id);
             await load();
         } catch (e) {
             setError(String(e));

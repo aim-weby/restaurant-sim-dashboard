@@ -39,6 +39,7 @@ export default function ScenariosPage() {
     const [items, setItems] = useState<Scenario[]>([]);
     const [results, setResults] = useState<Record<number, SimulationResponse>>({});
     const [running, setRunning] = useState<number | null>(null);
+    const [runAllRunning, setRunAllRunning] = useState(false);
 
     // data for dropdowns
     const [dayparts, setDayparts] = useState<{ id: number; label: string }[]>([]);
@@ -68,10 +69,7 @@ export default function ScenariosPage() {
     async function load() {
         setError(null);
         try {
-            const [sc, dp] = await Promise.all([
-                api.listScenarios(week),
-                api.listDayparts(),
-            ]);
+            const [sc, dp] = await Promise.all([api.listScenarios(week), api.listDayparts()]);
             setItems(sc);
             setDayparts(dp.map((d) => ({ id: d.id, label: d.label })));
 
@@ -79,6 +77,28 @@ export default function ScenariosPage() {
             if (dp.length > 0 && deltaDaypartId === null) setDeltaDaypartId(dp[0].id);
         } catch (e) {
             setError(String(e));
+        }
+    }
+
+    async function runAll() {
+        setError(null);
+        setRunAllRunning(true);
+        try {
+            for (const s of items) {
+                setRunning(s.id);
+                const res = await api.runScenario(s.id, {
+                    runs,
+                    seed: seed === "" ? null : Number(seed),
+                    arrivals_sigma: arrivalsSigma,
+                    spend_sigma: spendSigma,
+                });
+                setResults((prev) => ({ ...prev, [s.id]: res }));
+            }
+        } catch (e) {
+            setError(String(e));
+        } finally {
+            setRunning(null);
+            setRunAllRunning(false);
         }
     }
 
@@ -140,7 +160,11 @@ export default function ScenariosPage() {
             let params: any = overrides;
 
             if (advancedOpen) {
-                params = JSON.parse(overridesJson);
+                try {
+                    params = JSON.parse(overridesJson);
+                } catch {
+                    throw new Error("Invalid JSON in Advanced overrides.");
+                }
             }
 
             await api.createScenario(week, { name: name.trim() || "Scenario", params });
@@ -169,14 +193,12 @@ export default function ScenariosPage() {
         }
     }
 
+    function clearResults() {
+        setResults({});
+    }
+
     const compareMetrics = useMemo(() => {
-        return [
-            "finance.profit",
-            "finance.revenue",
-            "finance.profit_margin",
-            "finance.prime_cost_ratio",
-            "demand.lost_groups",
-        ];
+        return ["finance.profit", "finance.revenue", "finance.profit_margin", "finance.prime_cost_ratio", "demand.lost_groups"];
     }, []);
 
     if (!Number.isFinite(week)) {
@@ -217,13 +239,36 @@ export default function ScenariosPage() {
 
                     <label style={{ display: "grid", gap: 6 }}>
                         Arrivals sigma
-                        <input type="number" step="0.05" min={0} max={1} value={arrivalsSigma} onChange={(e) => setArrivalsSigma(Number(e.target.value))} />
+                        <input
+                            type="number"
+                            step="0.05"
+                            min={0}
+                            max={1}
+                            value={arrivalsSigma}
+                            onChange={(e) => setArrivalsSigma(Number(e.target.value))}
+                        />
                     </label>
 
                     <label style={{ display: "grid", gap: 6 }}>
                         Spend sigma
-                        <input type="number" step="0.05" min={0} max={1} value={spendSigma} onChange={(e) => setSpendSigma(Number(e.target.value))} />
+                        <input
+                            type="number"
+                            step="0.05"
+                            min={0}
+                            max={1}
+                            value={spendSigma}
+                            onChange={(e) => setSpendSigma(Number(e.target.value))}
+                        />
                     </label>
+                </div>
+
+                <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
+                    <button onClick={clearResults} disabled={Object.keys(results).length === 0}>
+                        Clear results
+                    </button>
+                    <div style={{ color: "#666", fontSize: 12 }}>
+                        Clears only the in-memory compare results (does not delete scenarios).
+                    </div>
                 </div>
             </div>
 
@@ -265,9 +310,7 @@ export default function ScenariosPage() {
                             />
                         </label>
 
-                        <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
-                            Example: spend 1.05 = +5% average spend per group.
-                        </div>
+                        <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>Example: spend 1.05 = +5% average spend per group.</div>
                     </div>
 
                     {/* Costs overrides */}
@@ -305,9 +348,7 @@ export default function ScenariosPage() {
                             />
                         </label>
 
-                        <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
-                            Overrides apply only to this scenario.
-                        </div>
+                        <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>Overrides apply only to this scenario.</div>
                     </div>
                 </div>
 
@@ -323,7 +364,9 @@ export default function ScenariosPage() {
                                 Weekday
                                 <select value={deltaWeekday} onChange={(e) => setDeltaWeekday(Number(e.target.value))}>
                                     {WEEKDAYS.map((w, i) => (
-                                        <option key={w} value={i}>{w}</option>
+                                        <option key={w} value={i}>
+                                            {w}
+                                        </option>
                                     ))}
                                 </select>
                             </label>
@@ -332,7 +375,9 @@ export default function ScenariosPage() {
                                 Daypart
                                 <select value={deltaDaypartId ?? ""} onChange={(e) => setDeltaDaypartId(Number(e.target.value))}>
                                     {dayparts.map((d) => (
-                                        <option key={d.id} value={d.id}>{d.label}</option>
+                                        <option key={d.id} value={d.id}>
+                                            {d.label}
+                                        </option>
                                     ))}
                                 </select>
                             </label>
@@ -365,7 +410,8 @@ export default function ScenariosPage() {
                                 {overrides.staffing_delta.map((d, idx) => (
                                     <li key={idx} style={{ display: "flex", gap: 10, alignItems: "center" }}>
                     <span>
-                      {WEEKDAYS[d.weekday]} · daypart #{d.daypart_id} · {d.role} · delta {d.staff_count_delta > 0 ? `+${d.staff_count_delta}` : d.staff_count_delta}
+                      {WEEKDAYS[d.weekday]} · daypart #{d.daypart_id} · {d.role} · delta{" "}
+                        {d.staff_count_delta > 0 ? `+${d.staff_count_delta}` : d.staff_count_delta}
                     </span>
                                         <button onClick={() => removeStaffingDelta(idx)}>Remove</button>
                                     </li>
@@ -407,23 +453,28 @@ export default function ScenariosPage() {
             <div style={{ marginTop: 18 }}>
                 <h3>Saved scenarios</h3>
 
+                <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
+                    <button onClick={runAll} disabled={runAllRunning || running !== null || items.length === 0}>
+                        {runAllRunning ? "Running all…" : "Run all scenarios"}
+                    </button>
+                    <div style={{ color: "#666", fontSize: 12 }}>Runs scenarios sequentially and fills the compare table.</div>
+                </div>
+
                 {items.length === 0 ? (
                     <p>No scenarios yet.</p>
                 ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+                    <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
                         {items.map((s) => (
                             <div key={s.id} style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
                                 <div style={{ fontWeight: 700 }}>{s.name}</div>
                                 <div style={{ color: "#666", fontSize: 12 }}>id: {s.id} · {s.created_at}</div>
 
-                                <button onClick={() => runScenario(s.id)} disabled={running !== null} style={{ marginTop: 10 }}>
+                                <button onClick={() => runScenario(s.id)} disabled={runAllRunning || running !== null} style={{ marginTop: 10 }}>
                                     {running === s.id ? "Running…" : "Run"}
                                 </button>
 
                                 {results[s.id] && (
-                                    <div style={{ marginTop: 10, fontSize: 12, color: "#555" }}>
-                                        Done · runs: {results[s.id].result.runs}
-                                    </div>
+                                    <div style={{ marginTop: 10, fontSize: 12, color: "#555" }}>Done · runs: {results[s.id].result.runs}</div>
                                 )}
 
                                 <details style={{ marginTop: 10 }}>
@@ -455,13 +506,17 @@ export default function ScenariosPage() {
                         <tbody>
                         {compareMetrics.map((m) => (
                             <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                                <td><code>{m}</code></td>
+                                <td>
+                                    <code>{m}</code>
+                                </td>
                                 {items.map((s) => {
                                     const r = results[s.id]?.result.metrics[m];
                                     if (!r) return <td key={s.id} style={{ color: "#999" }}>—</td>;
                                     return (
                                         <td key={s.id}>
-                                            <div><b>{fmtValue(m, r.p50)}</b></div>
+                                            <div>
+                                                <b>{fmtValue(m, r.p50)}</b>
+                                            </div>
                                             <div style={{ color: "#666", fontSize: 12 }}>
                                                 p10–p90: {fmtValue(m, r.p10)} → {fmtValue(m, r.p90)}
                                             </div>
@@ -474,9 +529,7 @@ export default function ScenariosPage() {
                     </table>
                 </div>
 
-                <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>
-                    Tip: Run scenarios first to populate compare table.
-                </div>
+                <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>Tip: Run scenarios first to populate compare table.</div>
             </div>
         </div>
     );

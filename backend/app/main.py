@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.venue import router as venue_router
+from app.api.dayparts import router as dayparts_router
 from app.db.init_db import init_db
 
 app = FastAPI(title="Restaurant Simulation Dashboard API", version="0.1.0")
@@ -26,3 +27,4 @@ def on_startup():
 
 app.include_router(health_router)
 app.include_router(venue_router)
+app.include_router(dayparts_router)

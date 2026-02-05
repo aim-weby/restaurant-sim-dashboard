@@ -88,3 +88,13 @@ export type Scenario = {
     params: SimulationOverrides;
     created_at: string;
 };
+
+export type Venue = {
+    id: number;
+    name: string;
+    timezone: string;
+    currency: string;
+    seats_total: number;
+    tables_count: number;
+    mode: string;
+};

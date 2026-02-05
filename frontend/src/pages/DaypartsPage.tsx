@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
-
-type Daypart = {
-    id: number;
-    label: string;
-    start_time: string;
-    end_time: string;
-    sort_order: number;
-};
-
-const API_BASE = "http://127.0.0.1:8000";
+import { Link } from "react-router-dom";
+import { api } from "../api/endpoints";
+import type { Daypart } from "../api/types";
 
 export default function DaypartsPage() {
     const [items, setItems] = useState<Daypart[]>([]);
@@ -24,10 +17,7 @@ export default function DaypartsPage() {
         setLoading(true);
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/dayparts`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = (await res.json()) as Daypart[];
-            setItems(data);
+            setItems(await api.listDayparts());
         } catch (e) {
             setError(String(e));
         } finally {
@@ -42,17 +32,16 @@ export default function DaypartsPage() {
     async function addDaypart() {
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/dayparts`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    label: newLabel.trim(),
-                    start_time: newStart,
-                    end_time: newEnd,
-                    sort_order: Number(newOrder),
-                }),
+            // pozor: v api/endpoints.ts zatím nemáš createDaypart/updateDaypart/deleteDaypart
+            // takže použijeme fetchJson přímo nebo doplníme endpoints. Nejčistší je doplnit endpoints.
+            // Pro teď použijeme fetchJson přes api layer rozšířením: viz níže v poznámce.
+            await (api as any).createDaypart({
+                label: newLabel.trim(),
+                start_time: newStart,
+                end_time: newEnd,
+                sort_order: Number(newOrder),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
             setNewLabel("");
             await load();
         } catch (e) {
@@ -63,17 +52,12 @@ export default function DaypartsPage() {
     async function saveDaypart(dp: Daypart) {
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/dayparts/${dp.id}`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    label: dp.label,
-                    start_time: dp.start_time,
-                    end_time: dp.end_time,
-                    sort_order: dp.sort_order,
-                }),
+            await (api as any).updateDaypart(dp.id, {
+                label: dp.label,
+                start_time: dp.start_time,
+                end_time: dp.end_time,
+                sort_order: dp.sort_order,
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             await load();
         } catch (e) {
             setError(String(e));
@@ -84,8 +68,7 @@ export default function DaypartsPage() {
         if (!confirm("Delete this daypart?")) return;
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/dayparts/${id}`, { method: "DELETE" });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            await (api as any).deleteDaypart(id);
             await load();
         } catch (e) {
             setError(String(e));
@@ -94,6 +77,10 @@ export default function DaypartsPage() {
 
     return (
         <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 900 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <Link to="/baseline-weeks">← Weeks</Link>
+            </div>
+
             <h1>Dayparts</h1>
 
             <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>

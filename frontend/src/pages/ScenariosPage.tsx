@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { Scenario, SimulationOverrides, SimulationResponse } from "../api/types";
+import type { Scenario, SimulationResponse, StaffingDelta, SimulationOverrides } from "../api/types";
+
+function clamp(v: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, v));
+}
 
 function defaultOverrides(): SimulationOverrides {
     return {
@@ -13,24 +17,66 @@ function defaultOverrides(): SimulationOverrides {
     };
 }
 
+function fmtCurrency(v: number) {
+    return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v);
+}
+function fmtPercent(v: number) {
+    return `${(v * 100).toFixed(1)} %`;
+}
+function fmtValue(metric: string, v: number) {
+    if (metric.startsWith("finance.") && !metric.endsWith("_ratio") && !metric.endsWith("_margin")) return fmtCurrency(v);
+    if (metric.endsWith("_ratio") || metric.endsWith("_margin")) return fmtPercent(v);
+    return v.toFixed(2);
+}
+
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 export default function ScenariosPage() {
     const { weekId } = useParams();
     const week = Number(weekId);
 
+    // saved scenarios
     const [items, setItems] = useState<Scenario[]>([]);
-    const [name, setName] = useState("New scenario");
-    const [overridesJson, setOverridesJson] = useState(JSON.stringify(defaultOverrides(), null, 2));
-
-    const [error, setError] = useState<string | null>(null);
+    const [results, setResults] = useState<Record<number, SimulationResponse>>({});
     const [running, setRunning] = useState<number | null>(null);
 
-    const [results, setResults] = useState<Record<number, SimulationResponse>>({});
+    // data for dropdowns
+    const [dayparts, setDayparts] = useState<{ id: number; label: string }[]>([]);
+
+    // create form state
+    const [name, setName] = useState("New scenario");
+    const [overrides, setOverrides] = useState<SimulationOverrides>(defaultOverrides());
+
+    // new staffing delta row builder
+    const [deltaWeekday, setDeltaWeekday] = useState(5);
+    const [deltaDaypartId, setDeltaDaypartId] = useState<number | null>(null);
+    const [deltaRole, setDeltaRole] = useState<"kitchen" | "service">("kitchen");
+    const [deltaCount, setDeltaCount] = useState(1);
+
+    // advanced mode
+    const [advancedOpen, setAdvancedOpen] = useState(false);
+    const [overridesJson, setOverridesJson] = useState(JSON.stringify(defaultOverrides(), null, 2));
+
+    // run settings
+    const [runs, setRuns] = useState(300);
+    const [seed, setSeed] = useState<number | "">(42);
+    const [arrivalsSigma, setArrivalsSigma] = useState(0.2);
+    const [spendSigma, setSpendSigma] = useState(0.1);
+
+    const [error, setError] = useState<string | null>(null);
 
     async function load() {
         setError(null);
         try {
-            const data = await api.listScenarios(week);
-            setItems(data);
+            const [sc, dp] = await Promise.all([
+                api.listScenarios(week),
+                api.listDayparts(),
+            ]);
+            setItems(sc);
+            setDayparts(dp.map((d) => ({ id: d.id, label: d.label })));
+
+            // initialize delta daypart default
+            if (dp.length > 0 && deltaDaypartId === null) setDeltaDaypartId(dp[0].id);
         } catch (e) {
             setError(String(e));
         }
@@ -39,25 +85,83 @@ export default function ScenariosPage() {
     useEffect(() => {
         if (!Number.isFinite(week)) return;
         load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [week]);
 
-    async function create() {
+    // keep advanced JSON in sync when not editing it
+    useEffect(() => {
+        if (!advancedOpen) {
+            setOverridesJson(JSON.stringify(overrides, null, 2));
+        }
+    }, [overrides, advancedOpen]);
+
+    function setMultiplier(kind: "arrivals" | "spend", v: number) {
+        const value = clamp(v, 0.5, 1.5);
+        setOverrides((prev) => ({
+            ...prev,
+            arrivals_multiplier: kind === "arrivals" ? value : prev.arrivals_multiplier,
+            spend_multiplier: kind === "spend" ? value : prev.spend_multiplier,
+        }));
+    }
+
+    function addStaffingDelta() {
+        if (!deltaDaypartId) return;
+
+        const row: StaffingDelta = {
+            weekday: deltaWeekday,
+            daypart_id: deltaDaypartId,
+            role: deltaRole,
+            staff_count_delta: Number(deltaCount),
+        };
+
+        setOverrides((prev) => ({
+            ...prev,
+            staffing_delta: [...prev.staffing_delta, row],
+        }));
+    }
+
+    function removeStaffingDelta(index: number) {
+        setOverrides((prev) => ({
+            ...prev,
+            staffing_delta: prev.staffing_delta.filter((_, i) => i !== index),
+        }));
+    }
+
+    function resetForm() {
+        setName("New scenario");
+        setOverrides(defaultOverrides());
+        setAdvancedOpen(false);
+        setOverridesJson(JSON.stringify(defaultOverrides(), null, 2));
+    }
+
+    async function createScenario() {
         setError(null);
         try {
-            const params = JSON.parse(overridesJson);
-            await api.createScenario(week, { name, params });
+            let params: any = overrides;
+
+            if (advancedOpen) {
+                params = JSON.parse(overridesJson);
+            }
+
+            await api.createScenario(week, { name: name.trim() || "Scenario", params });
             await load();
+            resetForm();
         } catch (e) {
             setError(String(e));
         }
     }
 
-    async function runScenario(id: number) {
-        setRunning(id);
+    async function runScenario(scenarioId: number) {
+        setRunning(scenarioId);
         setError(null);
         try {
-            const res = await api.runScenario(id, { runs: 300, seed: 42, arrivals_sigma: 0.2, spend_sigma: 0.1 });
-            setResults((prev) => ({ ...prev, [id]: res }));
+            const res = await api.runScenario(scenarioId, {
+                runs,
+                seed: seed === "" ? null : Number(seed),
+                arrivals_sigma: arrivalsSigma,
+                spend_sigma: spendSigma,
+            });
+            setResults((prev) => ({ ...prev, [scenarioId]: res }));
         } catch (e) {
             setError(String(e));
         } finally {
@@ -65,44 +169,243 @@ export default function ScenariosPage() {
         }
     }
 
-    const compareRows = useMemo(() => {
-        const keys = ["finance.profit", "finance.revenue", "demand.lost_groups"];
-        return keys;
+    const compareMetrics = useMemo(() => {
+        return [
+            "finance.profit",
+            "finance.revenue",
+            "finance.profit_margin",
+            "finance.prime_cost_ratio",
+            "demand.lost_groups",
+        ];
     }, []);
 
-    return (
-        <div style={{ padding: 24, maxWidth: 1100 }}>
-            <h1>Saved scenarios (week #{week})</h1>
+    if (!Number.isFinite(week)) {
+        return <div style={{ padding: 24 }}>Invalid weekId.</div>;
+    }
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <Link to={`/baseline-weeks/${week}/grid`}>Open grid</Link>
-                <Link to={`/baseline-weeks/${week}/kpis`}>View KPI</Link>
+    return (
+        <div style={{ padding: 24, maxWidth: 1200, fontFamily: "system-ui" }}>
+            <h1>Scenarios (week #{week})</h1>
+
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <Link to="/baseline-weeks">← Weeks</Link>
+                <Link to={`/baseline-weeks/${week}/grid`}>Grid</Link>
+                <Link to={`/baseline-weeks/${week}/kpis`}>KPI</Link>
+                <Link to={`/simulation?weekId=${week}`}>Simulation</Link>
             </div>
 
             {error && <p style={{ color: "crimson" }}>{error}</p>}
 
+            {/* Run controls */}
             <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
-                <h3 style={{ marginTop: 0 }}>Create scenario</h3>
-                <label style={{ display: "block", marginTop: 8 }}>
-                    Name
-                    <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", padding: 8 }} />
-                </label>
+                <h3 style={{ marginTop: 0 }}>Run settings</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 6 }}>
+                        Runs
+                        <input type="number" value={runs} min={10} max={5000} onChange={(e) => setRuns(Number(e.target.value))} />
+                    </label>
 
-                <label style={{ display: "block", marginTop: 10 }}>
-                    Overrides JSON
-                    <textarea
-                        value={overridesJson}
-                        onChange={(e) => setOverridesJson(e.target.value)}
-                        rows={10}
-                        style={{ width: "100%", padding: 8, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
-                    />
-                </label>
+                    <label style={{ display: "grid", gap: 6 }}>
+                        Seed (optional)
+                        <input
+                            type="number"
+                            value={seed}
+                            onChange={(e) => setSeed(e.target.value === "" ? "" : Number(e.target.value))}
+                            placeholder="e.g. 42"
+                        />
+                    </label>
 
-                <button onClick={create} style={{ marginTop: 10 }}>Save scenario</button>
+                    <label style={{ display: "grid", gap: 6 }}>
+                        Arrivals sigma
+                        <input type="number" step="0.05" min={0} max={1} value={arrivalsSigma} onChange={(e) => setArrivalsSigma(Number(e.target.value))} />
+                    </label>
+
+                    <label style={{ display: "grid", gap: 6 }}>
+                        Spend sigma
+                        <input type="number" step="0.05" min={0} max={1} value={spendSigma} onChange={(e) => setSpendSigma(Number(e.target.value))} />
+                    </label>
+                </div>
             </div>
 
+            {/* Create scenario */}
+            <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
+                <h3 style={{ marginTop: 0 }}>Create scenario</h3>
+
+                <label style={{ display: "block" }}>
+                    Name
+                    <input value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%", padding: 8, marginTop: 6 }} />
+                </label>
+
+                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    {/* Demand / price multipliers */}
+                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                        <div style={{ fontWeight: 700 }}>Demand & price</div>
+
+                        <label style={{ display: "grid", gap: 6, marginTop: 10 }}>
+                            Arrivals multiplier ({overrides.arrivals_multiplier.toFixed(2)})
+                            <input
+                                type="range"
+                                min={0.5}
+                                max={1.5}
+                                step={0.01}
+                                value={overrides.arrivals_multiplier}
+                                onChange={(e) => setMultiplier("arrivals", Number(e.target.value))}
+                            />
+                        </label>
+
+                        <label style={{ display: "grid", gap: 6, marginTop: 10 }}>
+                            Spend multiplier ({overrides.spend_multiplier.toFixed(2)})
+                            <input
+                                type="range"
+                                min={0.5}
+                                max={1.5}
+                                step={0.01}
+                                value={overrides.spend_multiplier}
+                                onChange={(e) => setMultiplier("spend", Number(e.target.value))}
+                            />
+                        </label>
+
+                        <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
+                            Example: spend 1.05 = +5% average spend per group.
+                        </div>
+                    </div>
+
+                    {/* Costs overrides */}
+                    <div style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                        <div style={{ fontWeight: 700 }}>Costs overrides (optional)</div>
+
+                        <label style={{ display: "grid", gap: 6, marginTop: 10 }}>
+                            Fixed cost / week override (CZK)
+                            <input
+                                type="number"
+                                value={overrides.fixed_cost_week_override ?? ""}
+                                placeholder="(leave empty)"
+                                onChange={(e) =>
+                                    setOverrides((prev) => ({
+                                        ...prev,
+                                        fixed_cost_week_override: e.target.value === "" ? null : Number(e.target.value),
+                                    }))
+                                }
+                            />
+                        </label>
+
+                        <label style={{ display: "grid", gap: 6, marginTop: 10 }}>
+                            Food cost % override (0–1)
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={overrides.food_cost_pct_override ?? ""}
+                                placeholder="(leave empty)"
+                                onChange={(e) =>
+                                    setOverrides((prev) => ({
+                                        ...prev,
+                                        food_cost_pct_override: e.target.value === "" ? null : Number(e.target.value),
+                                    }))
+                                }
+                            />
+                        </label>
+
+                        <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
+                            Overrides apply only to this scenario.
+                        </div>
+                    </div>
+                </div>
+
+                {/* Staffing delta builder */}
+                <div style={{ marginTop: 12, border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+                    <div style={{ fontWeight: 700 }}>Staffing changes (delta)</div>
+
+                    {dayparts.length === 0 ? (
+                        <div style={{ marginTop: 10, color: "#666" }}>No dayparts available. Create dayparts first.</div>
+                    ) : (
+                        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+                            <label style={{ display: "grid", gap: 6 }}>
+                                Weekday
+                                <select value={deltaWeekday} onChange={(e) => setDeltaWeekday(Number(e.target.value))}>
+                                    {WEEKDAYS.map((w, i) => (
+                                        <option key={w} value={i}>{w}</option>
+                                    ))}
+                                </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                                Daypart
+                                <select value={deltaDaypartId ?? ""} onChange={(e) => setDeltaDaypartId(Number(e.target.value))}>
+                                    {dayparts.map((d) => (
+                                        <option key={d.id} value={d.id}>{d.label}</option>
+                                    ))}
+                                </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                                Role
+                                <select value={deltaRole} onChange={(e) => setDeltaRole(e.target.value as any)}>
+                                    <option value="kitchen">kitchen</option>
+                                    <option value="service">service</option>
+                                </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                                Delta (+/-)
+                                <input type="number" value={deltaCount} onChange={(e) => setDeltaCount(Number(e.target.value))} />
+                            </label>
+
+                            <button onClick={addStaffingDelta} disabled={deltaDaypartId === null}>
+                                Add
+                            </button>
+                        </div>
+                    )}
+
+                    {overrides.staffing_delta.length === 0 ? (
+                        <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>No staffing changes.</div>
+                    ) : (
+                        <div style={{ marginTop: 10 }}>
+                            <div style={{ fontSize: 12, color: "#666" }}>Current changes:</div>
+                            <ul style={{ marginTop: 6 }}>
+                                {overrides.staffing_delta.map((d, idx) => (
+                                    <li key={idx} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span>
+                      {WEEKDAYS[d.weekday]} · daypart #{d.daypart_id} · {d.role} · delta {d.staff_count_delta > 0 ? `+${d.staff_count_delta}` : d.staff_count_delta}
+                    </span>
+                                        <button onClick={() => removeStaffingDelta(idx)}>Remove</button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+
+                {/* Advanced JSON */}
+                <div style={{ marginTop: 12 }}>
+                    <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <input type="checkbox" checked={advancedOpen} onChange={(e) => setAdvancedOpen(e.target.checked)} />
+                        Advanced (edit raw JSON)
+                    </label>
+
+                    {advancedOpen && (
+                        <textarea
+                            value={overridesJson}
+                            onChange={(e) => setOverridesJson(e.target.value)}
+                            rows={10}
+                            style={{
+                                marginTop: 8,
+                                width: "100%",
+                                padding: 10,
+                                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                            }}
+                        />
+                    )}
+                </div>
+
+                <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+                    <button onClick={createScenario}>Save scenario</button>
+                    <button onClick={resetForm}>Reset</button>
+                </div>
+            </div>
+
+            {/* Scenario list */}
             <div style={{ marginTop: 18 }}>
-                <h3>Scenario list</h3>
+                <h3>Saved scenarios</h3>
 
                 {items.length === 0 ? (
                     <p>No scenarios yet.</p>
@@ -135,10 +438,12 @@ export default function ScenariosPage() {
                 )}
             </div>
 
+            {/* Compare */}
             <div style={{ marginTop: 18, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
                 <h3 style={{ marginTop: 0 }}>Compare (run results)</h3>
+
                 <div style={{ overflowX: "auto" }}>
-                    <table width="100%" cellPadding={8} style={{ borderCollapse: "collapse", minWidth: 900 }}>
+                    <table width="100%" cellPadding={8} style={{ borderCollapse: "collapse", minWidth: 1000 }}>
                         <thead>
                         <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
                             <th>Metric</th>
@@ -148,7 +453,7 @@ export default function ScenariosPage() {
                         </tr>
                         </thead>
                         <tbody>
-                        {compareRows.map((m) => (
+                        {compareMetrics.map((m) => (
                             <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
                                 <td><code>{m}</code></td>
                                 {items.map((s) => {
@@ -156,9 +461,9 @@ export default function ScenariosPage() {
                                     if (!r) return <td key={s.id} style={{ color: "#999" }}>—</td>;
                                     return (
                                         <td key={s.id}>
-                                            <div><b>{r.p50.toFixed(2)}</b></div>
+                                            <div><b>{fmtValue(m, r.p50)}</b></div>
                                             <div style={{ color: "#666", fontSize: 12 }}>
-                                                p10–p90: {r.p10.toFixed(2)} → {r.p90.toFixed(2)}
+                                                p10–p90: {fmtValue(m, r.p10)} → {fmtValue(m, r.p90)}
                                             </div>
                                         </td>
                                     );
@@ -167,6 +472,10 @@ export default function ScenariosPage() {
                         ))}
                         </tbody>
                     </table>
+                </div>
+
+                <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>
+                    Tip: Run scenarios first to populate compare table.
                 </div>
             </div>
         </div>

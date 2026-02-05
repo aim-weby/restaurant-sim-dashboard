@@ -9,6 +9,8 @@ import StaffingPage from "./pages/StaffingPage";
 import SimulationPage from "./pages/SimulationPage";
 import ReportPage from "./pages/ReportPage";
 import ScenariosPage from "./pages/ScenariosPage";
+import DaypartsPage from "./pages/DaypartsPage";
+import VenueSettingsPage from "./pages/VenueSettingsPage";
 
 export default function App() {
     return (
@@ -26,6 +28,9 @@ export default function App() {
 
                 <Route path="/simulation" element={<SimulationPage />} />
                 <Route path="/report" element={<ReportPage />} />
+
+                <Route path="/dayparts" element={<DaypartsPage />} />
+                <Route path="/settings/venue" element={<VenueSettingsPage />} />
 
                 <Route path="*" element={<div style={{ padding: 24 }}>Not found</div>} />
             </Route>

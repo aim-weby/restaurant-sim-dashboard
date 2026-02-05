@@ -9,11 +9,19 @@ import type {
     SimulationResponse,
     SimulationRunRequest,
     StaffingRow,
+    Venue,
 } from "./types";
 
 // --- dayparts ---
 export const api = {
+    // --- dayparts ---
     listDayparts: () => fetchJson<Daypart[]>("/dayparts"),
+    createDaypart: (payload: { label: string; start_time: string; end_time: string; sort_order: number }) =>
+        fetchJson<Daypart>("/dayparts", { method: "POST", body: JSON.stringify(payload) }),
+    updateDaypart: (id: number, payload: { label: string; start_time: string; end_time: string; sort_order: number }) =>
+        fetchJson<Daypart>(`/dayparts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+    deleteDaypart: (id: number) =>
+        fetchJson<{ ok: boolean }>(`/dayparts/${id}`, { method: "DELETE" }),
 
     // --- baseline weeks ---
     listWeeks: () => fetchJson<BaselineWeek[]>("/baseline-weeks"),
@@ -48,4 +56,14 @@ export const api = {
         fetchJson<Scenario>(`/baseline-weeks/${weekId}/scenarios`, { method: "POST", body: JSON.stringify(payload) }),
     runScenario: (scenarioId: number, payload: { runs: number; seed?: number | null; arrivals_sigma: number; spend_sigma: number }) =>
         fetchJson<SimulationResponse>(`/scenarios/${scenarioId}/run`, { method: "POST", body: JSON.stringify(payload) }),
+
+    getVenue: () => fetchJson<Venue>("/venue"),
+    updateVenue: (payload: {
+        name: string;
+        timezone: string;
+        currency: string;
+        seats_total: number;
+        tables_count: number;
+        mode: string;
+    }) => fetchJson<Venue>("/venue", { method: "PUT", body: JSON.stringify(payload) }),
 };

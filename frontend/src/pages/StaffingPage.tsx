@@ -1,21 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api } from "../api/endpoints";
+import type { Daypart, StaffingRow } from "../api/types";
 
-const API_BASE = "http://127.0.0.1:8000";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-type Daypart = { id: number; label: string; start_time: string; end_time: string; sort_order: number };
-
-type StaffingRow = {
-    id?: number;
-    weekday: number;
-    daypart_id: number;
-    role: string; // kitchen | service
-    staff_count: number;
-    hourly_rate: number;
-    hours_in_daypart: number;
-};
-
-export default function StaffingPage(props: { onBack: () => void }) {
+export default function StaffingPage() {
     const [dayparts, setDayparts] = useState<Daypart[]>([]);
     const [rows, setRows] = useState<StaffingRow[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -25,25 +15,15 @@ export default function StaffingPage(props: { onBack: () => void }) {
         async function load() {
             setError(null);
             try {
-                const dpRes = await fetch(`${API_BASE}/dayparts`);
-                if (!dpRes.ok) throw new Error(`Dayparts HTTP ${dpRes.status}`);
-                setDayparts((await dpRes.json()) as Daypart[]);
-
-                const stRes = await fetch(`${API_BASE}/staffing`);
-                if (!stRes.ok) throw new Error(`Staffing HTTP ${stRes.status}`);
-                setRows((await stRes.json()) as StaffingRow[]);
+                const [dp, st] = await Promise.all([api.listDayparts(), api.listStaffing()]);
+                setDayparts(dp);
+                setRows(st);
             } catch (e) {
                 setError(String(e));
             }
         }
         load();
     }, []);
-
-    const daypartMap = useMemo(() => {
-        const m = new Map<number, string>();
-        dayparts.forEach((d) => m.set(d.id, d.label));
-        return m;
-    }, [dayparts]);
 
     function addRow() {
         if (dayparts.length === 0) return;
@@ -72,13 +52,8 @@ export default function StaffingPage(props: { onBack: () => void }) {
                 hourly_rate: Number(r.hourly_rate),
                 hours_in_daypart: Number(r.hours_in_daypart),
             }));
-            const res = await fetch(`${API_BASE}/staffing`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            setRows((await res.json()) as StaffingRow[]);
+            const saved = await api.upsertStaffing(payload);
+            setRows(saved);
         } catch (e) {
             setError(String(e));
         } finally {
@@ -88,14 +63,21 @@ export default function StaffingPage(props: { onBack: () => void }) {
 
     return (
         <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 1000 }}>
-            <button onClick={props.onBack}>← Back</button>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <Link to="/baseline-weeks">← Weeks</Link>
+            </div>
+
             <h1>Staffing plan</h1>
 
             {error && <p style={{ color: "crimson" }}>{error}</p>}
 
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <button onClick={addRow} disabled={dayparts.length === 0}>Add row</button>
-                <button onClick={saveAll} disabled={saving}>{saving ? "Saving…" : "Save all"}</button>
+                <button onClick={addRow} disabled={dayparts.length === 0}>
+                    Add row
+                </button>
+                <button onClick={saveAll} disabled={saving}>
+                    {saving ? "Saving…" : "Save all"}
+                </button>
             </div>
 
             {dayparts.length === 0 ? (
@@ -126,7 +108,9 @@ export default function StaffingPage(props: { onBack: () => void }) {
                                     }}
                                 >
                                     {WEEKDAYS.map((w, i) => (
-                                        <option key={w} value={i}>{w}</option>
+                                        <option key={w} value={i}>
+                                            {w}
+                                        </option>
                                     ))}
                                 </select>
                             </td>
@@ -140,7 +124,9 @@ export default function StaffingPage(props: { onBack: () => void }) {
                                     }}
                                 >
                                     {dayparts.map((d) => (
-                                        <option key={d.id} value={d.id}>{d.label}</option>
+                                        <option key={d.id} value={d.id}>
+                                            {d.label}
+                                        </option>
                                     ))}
                                 </select>
                             </td>

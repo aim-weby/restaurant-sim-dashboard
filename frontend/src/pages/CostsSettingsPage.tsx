@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { api } from "../api/endpoints";
+import type { Costs } from "../api/types";
 
-const API_BASE = "http://127.0.0.1:8000";
-
-type Costs = {
-    id: number;
-    fixed_cost_week: number;
-    food_cost_pct: number; // 0..1
-};
-
-export default function CostsSettingsPage(props: { onBack: () => void }) {
+export default function CostsSettingsPage() {
     const [data, setData] = useState<Costs | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -17,9 +12,7 @@ export default function CostsSettingsPage(props: { onBack: () => void }) {
         async function load() {
             setError(null);
             try {
-                const res = await fetch(`${API_BASE}/settings/costs`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                setData((await res.json()) as Costs);
+                setData(await api.getCosts());
             } catch (e) {
                 setError(String(e));
             }
@@ -32,16 +25,11 @@ export default function CostsSettingsPage(props: { onBack: () => void }) {
         setSaving(true);
         setError(null);
         try {
-            const res = await fetch(`${API_BASE}/settings/costs`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    fixed_cost_week: Number(data.fixed_cost_week),
-                    food_cost_pct: Number(data.food_cost_pct),
-                }),
+            const updated = await api.updateCosts({
+                fixed_cost_week: Number(data.fixed_cost_week),
+                food_cost_pct: Number(data.food_cost_pct),
             });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            setData((await res.json()) as Costs);
+            setData(updated);
         } catch (e) {
             setError(String(e));
         } finally {
@@ -51,7 +39,10 @@ export default function CostsSettingsPage(props: { onBack: () => void }) {
 
     return (
         <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 700 }}>
-            <button onClick={props.onBack}>← Back</button>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <Link to="/baseline-weeks">← Weeks</Link>
+            </div>
+
             <h1>Cost settings</h1>
 
             {error && <p style={{ color: "crimson" }}>{error}</p>}
@@ -78,9 +69,7 @@ export default function CostsSettingsPage(props: { onBack: () => void }) {
                             onChange={(e) => setData({ ...data, food_cost_pct: Number(e.target.value) })}
                             style={{ width: "100%", padding: 8 }}
                         />
-                        <div style={{ color: "#666", fontSize: 12, marginTop: 4 }}>
-                            Example: 0.30 = 30%
-                        </div>
+                        <div style={{ color: "#666", fontSize: 12, marginTop: 4 }}>Example: 0.30 = 30%</div>
                     </label>
 
                     <button onClick={save} disabled={saving} style={{ marginTop: 16, padding: "10px 14px" }}>

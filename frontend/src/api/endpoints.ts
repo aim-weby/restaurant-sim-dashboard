@@ -10,6 +10,8 @@ import type {
     SimulationRunRequest,
     StaffingRow,
     Venue,
+    BaselineKpisResponse,
+    BaselineGridCell,
 } from "./types";
 
 // --- dayparts ---
@@ -66,4 +68,10 @@ export const api = {
         tables_count: number;
         mode: string;
     }) => fetchJson<Venue>("/venue", { method: "PUT", body: JSON.stringify(payload) }),
+
+    getBaselineKpis: (weekId: number) =>
+        fetchJson<BaselineKpisResponse>(`/baseline-weeks/${weekId}/kpis`),
+
+    getBaselineGrid: (weekId: number) =>
+        fetchJson<BaselineGridCell[]>(`/baseline-weeks/${weekId}/grid`),
 };

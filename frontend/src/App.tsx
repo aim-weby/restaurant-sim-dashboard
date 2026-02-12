@@ -12,6 +12,7 @@ import ReportPage from "./pages/ReportPage";
 import ScenariosPage from "./pages/ScenariosPage";
 import DaypartsPage from "./pages/DaypartsPage";
 import VenueSettingsPage from "./pages/VenueSettingsPage";
+import SimParamsPage from "./pages/SimParamsPage";
 
 export default function App() {
     return (
@@ -34,6 +35,7 @@ export default function App() {
 
                 <Route path="/dayparts" element={<DaypartsPage />} />
                 <Route path="/settings/venue" element={<VenueSettingsPage />} />
+                <Route path="/baseline-weeks/:weekId/sim-params" element={<SimParamsPage />} />
 
                 <Route path="*" element={<div style={{ padding: 24 }}>Not found</div>} />
             </Route>

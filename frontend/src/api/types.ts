@@ -40,8 +40,29 @@ export type StaffingRow = {
 
 export type KpisResponse = {
     baseline_week_id: number;
+    currency?: string;
     kpis: Record<string, number>;
-    inputs_used?: Record<string, number>;
+    timeseries?: {
+        by_weekday: Record<string, number | string>[];
+        by_daypart: Record<string, number | string>[];
+        heatmap: Record<string, number>[];
+    };
+    inputs_used?: Record<string, any>;
+};
+
+export type DataHealthCheck = {
+    key: string;
+    label: string;
+    status: "ok" | "missing";
+    detail?: string;
+};
+
+export type DataHealthResponse = {
+    baseline_week_id: number;
+    coverage_score: number;
+    actionability_score: number;
+    checks: DataHealthCheck[];
+    recommendations: string[];
 };
 
 export type MetricSummary = { mean: number; p10: number; p50: number; p90: number };
@@ -57,27 +78,44 @@ export type SimulationResponse = {
     };
 };
 
-export type StaffingDelta = {
+export type StaffingChange = {
     weekday: number;
     daypart_id: number;
     role: string;
-    staff_count_delta: number;
+    delta_staff: number;
+};
+
+export type PriceChange = {
+    type: "percent" | "absolute";
+    value: number;
+};
+
+export type CapacityChanges = {
+    tables_count: number;
+    seats_total: number;
+};
+
+export type OpeningHoursChange = {
+    weekday: number;
+    open_time: string;
+    close_time: string;
 };
 
 export type SimulationOverrides = {
+    staffing_changes: StaffingChange[];
+    price_change?: PriceChange | null;
+    capacity_changes?: CapacityChanges | null;
+    opening_hours_changes: OpeningHoursChange[];
     arrivals_multiplier: number;
     spend_multiplier: number;
     food_cost_pct_override?: number | null;
     fixed_cost_week_override?: number | null;
-    staffing_delta: StaffingDelta[];
 };
 
 export type SimulationRunRequest = {
     baseline_week_id: number;
     runs: number;
     seed?: number | null;
-    arrivals_sigma: number;
-    spend_sigma: number;
     overrides: SimulationOverrides;
 };
 
@@ -87,6 +125,15 @@ export type Scenario = {
     name: string;
     params: SimulationOverrides;
     created_at: string;
+};
+
+export type ScenarioKpisResponse = {
+    scenario_id: number;
+    scenario_name: string;
+    baseline_week_id: number;
+    baseline_kpis: Record<string, number>;
+    scenario_kpis: Record<string, number>;
+    deltas: Record<string, number>;
 };
 
 export type Venue = {
@@ -99,18 +146,18 @@ export type Venue = {
     mode: string;
 };
 
-export type BaselineKpisResponse = {
-    baseline_week_id: number;
-    kpis: Record<string, number>;
-    inputs_used: Record<string, any>;
-};
-
-export type BaselineGridCell = {
+export type SimulationParams = {
     id: number;
     baseline_week_id: number;
-    weekday: number; // 0..6
-    daypart_id: number;
-    arrivals_groups: number;
-    avg_spend: number;
-    avg_party_size: number;
+    prep_time_min: number;
+    prep_time_mode: number;
+    prep_time_max: number;
+    seat_time_min: number;
+    seat_time_mode: number;
+    seat_time_max: number;
+    alpha_seat_wait: number;
+    balking_wait_table_limit: number;
+    balking_wait_food_limit: number;
+    price_elasticity: number;
+    demand_noise_pct: number;
 };

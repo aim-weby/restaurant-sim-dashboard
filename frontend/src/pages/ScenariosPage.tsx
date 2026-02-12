@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { Scenario, SimulationResponse, StaffingDelta, SimulationOverrides } from "../api/types";
+import type { Scenario, ScenarioKpisResponse, SimulationResponse, StaffingChange, SimulationOverrides } from "../api/types";
 
 function clamp(v: number, min: number, max: number) {
     return Math.max(min, Math.min(max, v));
@@ -9,11 +9,14 @@ function clamp(v: number, min: number, max: number) {
 
 function defaultOverrides(): SimulationOverrides {
     return {
+        staffing_changes: [],
+        price_change: null,
+        capacity_changes: null,
+        opening_hours_changes: [],
         arrivals_multiplier: 1.0,
         spend_multiplier: 1.0,
         food_cost_pct_override: null,
         fixed_cost_week_override: null,
-        staffing_delta: [],
     };
 }
 
@@ -38,6 +41,7 @@ export default function ScenariosPage() {
     // saved scenarios
     const [items, setItems] = useState<Scenario[]>([]);
     const [results, setResults] = useState<Record<number, SimulationResponse>>({});
+    const [detKpis, setDetKpis] = useState<Record<number, ScenarioKpisResponse>>({});
     const [running, setRunning] = useState<number | null>(null);
     const [runAllRunning, setRunAllRunning] = useState(false);
 
@@ -59,10 +63,8 @@ export default function ScenariosPage() {
     const [overridesJson, setOverridesJson] = useState(JSON.stringify(defaultOverrides(), null, 2));
 
     // run settings
-    const [runs, setRuns] = useState(300);
+    const [runs, setRuns] = useState(200);
     const [seed, setSeed] = useState<number | "">(42);
-    const [arrivalsSigma, setArrivalsSigma] = useState(0.2);
-    const [spendSigma, setSpendSigma] = useState(0.1);
 
     const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +74,17 @@ export default function ScenariosPage() {
             const [sc, dp] = await Promise.all([api.listScenarios(week), api.listDayparts()]);
             setItems(sc);
             setDayparts(dp.map((d) => ({ id: d.id, label: d.label })));
+
+            // Fetch deterministic KPIs for each scenario
+            const kpiMap: Record<number, ScenarioKpisResponse> = {};
+            await Promise.all(
+                sc.map(async (s) => {
+                    try {
+                        kpiMap[s.id] = await api.getScenarioKpis(s.id);
+                    } catch { /* ignore errors for individual fetches */ }
+                })
+            );
+            setDetKpis(kpiMap);
 
             // initialize delta daypart default
             if (dp.length > 0 && deltaDaypartId === null) setDeltaDaypartId(dp[0].id);
@@ -89,8 +102,6 @@ export default function ScenariosPage() {
                 const res = await api.runScenario(s.id, {
                     runs,
                     seed: seed === "" ? null : Number(seed),
-                    arrivals_sigma: arrivalsSigma,
-                    spend_sigma: spendSigma,
                 });
                 setResults((prev) => ({ ...prev, [s.id]: res }));
             }
@@ -127,23 +138,23 @@ export default function ScenariosPage() {
     function addStaffingDelta() {
         if (!deltaDaypartId) return;
 
-        const row: StaffingDelta = {
+        const row: StaffingChange = {
             weekday: deltaWeekday,
             daypart_id: deltaDaypartId,
             role: deltaRole,
-            staff_count_delta: Number(deltaCount),
+            delta_staff: Number(deltaCount),
         };
 
         setOverrides((prev) => ({
             ...prev,
-            staffing_delta: [...prev.staffing_delta, row],
+            staffing_changes: [...prev.staffing_changes, row],
         }));
     }
 
     function removeStaffingDelta(index: number) {
         setOverrides((prev) => ({
             ...prev,
-            staffing_delta: prev.staffing_delta.filter((_, i) => i !== index),
+            staffing_changes: prev.staffing_changes.filter((_: StaffingChange, i: number) => i !== index),
         }));
     }
 
@@ -182,8 +193,6 @@ export default function ScenariosPage() {
             const res = await api.runScenario(scenarioId, {
                 runs,
                 seed: seed === "" ? null : Number(seed),
-                arrivals_sigma: arrivalsSigma,
-                spend_sigma: spendSigma,
             });
             setResults((prev) => ({ ...prev, [scenarioId]: res }));
         } catch (e) {
@@ -198,7 +207,7 @@ export default function ScenariosPage() {
     }
 
     const compareMetrics = useMemo(() => {
-        return ["finance.profit", "finance.revenue", "finance.profit_margin", "finance.prime_cost_ratio", "demand.lost_groups"];
+        return ["finance.revenue", "finance.profit", "demand.served_groups", "demand.lost_groups", "queue.wait_table", "queue.wait_food", "util.kitchen", "util.tables"];
     }, []);
 
     if (!Number.isFinite(week)) {
@@ -221,7 +230,7 @@ export default function ScenariosPage() {
             {/* Run controls */}
             <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
                 <h3 style={{ marginTop: 0 }}>Run settings</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, maxWidth: 400 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                         Runs
                         <input type="number" value={runs} min={10} max={5000} onChange={(e) => setRuns(Number(e.target.value))} />
@@ -234,30 +243,6 @@ export default function ScenariosPage() {
                             value={seed}
                             onChange={(e) => setSeed(e.target.value === "" ? "" : Number(e.target.value))}
                             placeholder="e.g. 42"
-                        />
-                    </label>
-
-                    <label style={{ display: "grid", gap: 6 }}>
-                        Arrivals sigma
-                        <input
-                            type="number"
-                            step="0.05"
-                            min={0}
-                            max={1}
-                            value={arrivalsSigma}
-                            onChange={(e) => setArrivalsSigma(Number(e.target.value))}
-                        />
-                    </label>
-
-                    <label style={{ display: "grid", gap: 6 }}>
-                        Spend sigma
-                        <input
-                            type="number"
-                            step="0.05"
-                            min={0}
-                            max={1}
-                            value={spendSigma}
-                            onChange={(e) => setSpendSigma(Number(e.target.value))}
                         />
                     </label>
                 </div>
@@ -401,18 +386,18 @@ export default function ScenariosPage() {
                         </div>
                     )}
 
-                    {overrides.staffing_delta.length === 0 ? (
+                    {overrides.staffing_changes.length === 0 ? (
                         <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>No staffing changes.</div>
                     ) : (
                         <div style={{ marginTop: 10 }}>
                             <div style={{ fontSize: 12, color: "#666" }}>Current changes:</div>
                             <ul style={{ marginTop: 6 }}>
-                                {overrides.staffing_delta.map((d, idx) => (
+                                {overrides.staffing_changes.map((d: StaffingChange, idx: number) => (
                                     <li key={idx} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <span>
-                      {WEEKDAYS[d.weekday]} · daypart #{d.daypart_id} · {d.role} · delta{" "}
-                        {d.staff_count_delta > 0 ? `+${d.staff_count_delta}` : d.staff_count_delta}
-                    </span>
+                                        <span>
+                                            {WEEKDAYS[d.weekday]} · daypart #{d.daypart_id} · {d.role} · delta{" "}
+                                            {d.delta_staff > 0 ? `+${d.delta_staff}` : d.delta_staff}
+                                        </span>
                                         <button onClick={() => removeStaffingDelta(idx)}>Remove</button>
                                     </li>
                                 ))}
@@ -477,11 +462,40 @@ export default function ScenariosPage() {
                                     <div style={{ marginTop: 10, fontSize: 12, color: "#555" }}>Done · runs: {results[s.id].result.runs}</div>
                                 )}
 
+                                {/* Deterministic KPI deltas */}
+                                {detKpis[s.id] && (() => {
+                                    const d = detKpis[s.id].deltas;
+                                    const deltaItems = [
+                                        { label: "Δ Revenue", key: "finance.revenue", fmt: fmtCurrency, better: "up" as const },
+                                        { label: "Δ Profit", key: "finance.profit", fmt: fmtCurrency, better: "up" as const },
+                                        { label: "Δ Labor", key: "finance.labor_cost", fmt: fmtCurrency, better: "down" as const },
+                                        { label: "Δ Arrivals", key: "demand.arrivals_groups", fmt: (v: number) => (v > 0 ? "+" : "") + v, better: "up" as const },
+                                    ];
+                                    return (
+                                        <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                                            {deltaItems.map((item) => {
+                                                const val = d[item.key] ?? 0;
+                                                const good = item.better === "up" ? val > 0 : val < 0;
+                                                const neutral = Math.abs(val) < 0.01;
+                                                const color = neutral ? "#888" : good ? "#16a34a" : "#dc2626";
+                                                return (
+                                                    <div key={item.key} style={{ textAlign: "center", padding: 6, borderRadius: 8, background: "#f8f9fa" }}>
+                                                        <div style={{ fontSize: 11, color: "#666" }}>{item.label}</div>
+                                                        <div style={{ fontSize: 14, fontWeight: 700, color }}>
+                                                            {val > 0 && item.key !== "demand.arrivals_groups" ? "+" : ""}{item.fmt(val)}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })()}
+
                                 <details style={{ marginTop: 10 }}>
                                     <summary>Overrides</summary>
                                     <pre style={{ background: "#fafafa", padding: 10, borderRadius: 10, overflowX: "auto" }}>
-                    {JSON.stringify(s.params, null, 2)}
-                  </pre>
+                                        {JSON.stringify(s.params, null, 2)}
+                                    </pre>
                                 </details>
                             </div>
                         ))}
@@ -496,35 +510,35 @@ export default function ScenariosPage() {
                 <div style={{ overflowX: "auto" }}>
                     <table width="100%" cellPadding={8} style={{ borderCollapse: "collapse", minWidth: 1000 }}>
                         <thead>
-                        <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                            <th>Metric</th>
-                            {items.map((s) => (
-                                <th key={s.id}>{s.name}</th>
-                            ))}
-                        </tr>
+                            <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+                                <th>Metric</th>
+                                {items.map((s) => (
+                                    <th key={s.id}>{s.name}</th>
+                                ))}
+                            </tr>
                         </thead>
                         <tbody>
-                        {compareMetrics.map((m) => (
-                            <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                                <td>
-                                    <code>{m}</code>
-                                </td>
-                                {items.map((s) => {
-                                    const r = results[s.id]?.result.metrics[m];
-                                    if (!r) return <td key={s.id} style={{ color: "#999" }}>—</td>;
-                                    return (
-                                        <td key={s.id}>
-                                            <div>
-                                                <b>{fmtValue(m, r.p50)}</b>
-                                            </div>
-                                            <div style={{ color: "#666", fontSize: 12 }}>
-                                                p10–p90: {fmtValue(m, r.p10)} → {fmtValue(m, r.p90)}
-                                            </div>
-                                        </td>
-                                    );
-                                })}
-                            </tr>
-                        ))}
+                            {compareMetrics.map((m) => (
+                                <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                                    <td>
+                                        <code>{m}</code>
+                                    </td>
+                                    {items.map((s) => {
+                                        const r = results[s.id]?.result.metrics[m];
+                                        if (!r) return <td key={s.id} style={{ color: "#999" }}>—</td>;
+                                        return (
+                                            <td key={s.id}>
+                                                <div>
+                                                    <b>{fmtValue(m, r.p50)}</b>
+                                                </div>
+                                                <div style={{ color: "#666", fontSize: 12 }}>
+                                                    p10–p90: {fmtValue(m, r.p10)} → {fmtValue(m, r.p90)}
+                                                </div>
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>

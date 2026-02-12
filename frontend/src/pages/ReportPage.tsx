@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { BaselineCell, BaselineKpisResponse, BaselineWeek, Scenario, SimulationResponse } from "../api/types";
+import type { BaselineCell, KpisResponse, BaselineWeek, Scenario, SimulationResponse } from "../api/types";
 import {
     ResponsiveContainer,
     BarChart,
@@ -71,7 +71,7 @@ export default function ReportPage() {
     const [selectedWeekId, setSelectedWeekId] = useState<number | null>(null);
 
     // baseline week data
-    const [kpis, setKpis] = useState<BaselineKpisResponse | null>(null);
+    const [kpis, setKpis] = useState<KpisResponse | null>(null);
     const [grid, setGrid] = useState<BaselineCell[]>([]);
 
     // scenarios
@@ -119,7 +119,7 @@ export default function ReportPage() {
             setLoadingWeek(true);
             try {
                 const [k, g, sc] = await Promise.all([
-                    api.getBaselineKpis(weekId),
+                    api.getKpis(weekId),
                     api.getBaselineData(weekId),
                     api.listScenarios(weekId),
                 ]);
@@ -200,8 +200,6 @@ export default function ReportPage() {
             run_settings: {
                 runs,
                 seed: seed === "" ? null : Number(seed),
-                arrivals_sigma: arrivalsSigma,
-                spend_sigma: spendSigma,
             },
             exported_at: new Date().toISOString(),
         };
@@ -222,8 +220,6 @@ export default function ReportPage() {
             const res = await api.runScenario(scenarioId, {
                 runs,
                 seed: seed === "" ? null : Number(seed),
-                arrivals_sigma: arrivalsSigma,
-                spend_sigma: spendSigma,
             });
             setScenarioResults((prev) => ({ ...prev, [scenarioId]: res }));
         } catch (e) {
@@ -241,8 +237,6 @@ export default function ReportPage() {
                 const res = await api.runScenario(s.id, {
                     runs,
                     seed: seed === "" ? null : Number(seed),
-                    arrivals_sigma: arrivalsSigma,
-                    spend_sigma: spendSigma,
                 });
                 setScenarioResults((prev) => ({ ...prev, [s.id]: res }));
             }
@@ -493,8 +487,8 @@ export default function ReportPage() {
                                     <details style={{ marginTop: 10 }}>
                                         <summary>Overrides</summary>
                                         <pre style={{ background: "#fafafa", padding: 10, borderRadius: 10, overflowX: "auto" }}>
-{JSON.stringify(s.params, null, 2)}
-                    </pre>
+                                            {JSON.stringify(s.params, null, 2)}
+                                        </pre>
                                     </details>
                                 </div>
                             ))}
@@ -503,31 +497,31 @@ export default function ReportPage() {
                         <div style={{ marginTop: 14, overflowX: "auto" }}>
                             <table width="100%" cellPadding={8} style={{ borderCollapse: "collapse", minWidth: 1000 }}>
                                 <thead>
-                                <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                                    <th>Metric</th>
-                                    {scenarios.map((s) => (
-                                        <th key={s.id}>{s.name}</th>
-                                    ))}
-                                </tr>
+                                    <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+                                        <th>Metric</th>
+                                        {scenarios.map((s) => (
+                                            <th key={s.id}>{s.name}</th>
+                                        ))}
+                                    </tr>
                                 </thead>
                                 <tbody>
-                                {compareMetrics.map((m) => (
-                                    <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                                        <td><code>{m}</code></td>
-                                        {scenarios.map((s) => {
-                                            const x = scenarioCompareTable[s.id]?.[m] ?? null;
-                                            if (!x) return <td key={s.id} style={{ color: "#999" }}>—</td>;
-                                            return (
-                                                <td key={s.id}>
-                                                    <div><b>{fmtValue(m, x.p50)}</b></div>
-                                                    <div style={{ color: "#666", fontSize: 12 }}>
-                                                        p10–p90: {fmtValue(m, x.p10)} → {fmtValue(m, x.p90)}
-                                                    </div>
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                ))}
+                                    {compareMetrics.map((m) => (
+                                        <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                                            <td><code>{m}</code></td>
+                                            {scenarios.map((s) => {
+                                                const x = scenarioCompareTable[s.id]?.[m] ?? null;
+                                                if (!x) return <td key={s.id} style={{ color: "#999" }}>—</td>;
+                                                return (
+                                                    <td key={s.id}>
+                                                        <div><b>{fmtValue(m, x.p50)}</b></div>
+                                                        <div style={{ color: "#666", fontSize: 12 }}>
+                                                            p10–p90: {fmtValue(m, x.p10)} → {fmtValue(m, x.p90)}
+                                                        </div>
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         </div>

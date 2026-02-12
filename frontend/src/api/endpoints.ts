@@ -3,18 +3,18 @@ import type {
     BaselineCell,
     BaselineWeek,
     Costs,
+    DataHealthResponse,
     Daypart,
     KpisResponse,
     Scenario,
+    ScenarioKpisResponse,
+    SimulationParams,
     SimulationResponse,
     SimulationRunRequest,
     StaffingRow,
     Venue,
-    BaselineKpisResponse,
-    BaselineGridCell,
 } from "./types";
 
-// --- dayparts ---
 export const api = {
     // --- dayparts ---
     listDayparts: () => fetchJson<Daypart[]>("/dayparts"),
@@ -23,7 +23,7 @@ export const api = {
     updateDaypart: (id: number, payload: { label: string; start_time: string; end_time: string; sort_order: number }) =>
         fetchJson<Daypart>(`/dayparts/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
     deleteDaypart: (id: number) =>
-        fetchJson<{ ok: boolean }>(`/dayparts/${id}`, { method: "DELETE" }),
+        fetchJson<void>(`/dayparts/${id}`, { method: "DELETE" }),
 
     // --- baseline weeks ---
     listWeeks: () => fetchJson<BaselineWeek[]>("/baseline-weeks"),
@@ -35,8 +35,9 @@ export const api = {
     putBaselineData: (weekId: number, cells: BaselineCell[]) =>
         fetchJson<BaselineCell[]>(`/baseline-weeks/${weekId}/data`, { method: "PUT", body: JSON.stringify(cells) }),
 
-    // --- KPI ---
+    // --- KPI (single canonical method) ---
     getKpis: (weekId: number) => fetchJson<KpisResponse>(`/baseline-weeks/${weekId}/kpis`),
+    getHealth: (weekId: number) => fetchJson<DataHealthResponse>(`/baseline-weeks/${weekId}/health`),
 
     // --- costs ---
     getCosts: () => fetchJson<Costs>("/settings/costs"),
@@ -52,13 +53,16 @@ export const api = {
     runSimulation: (payload: SimulationRunRequest) =>
         fetchJson<SimulationResponse>("/simulation/run", { method: "POST", body: JSON.stringify(payload) }),
 
-    // --- scenarios (storage) -> doplníme v kroku 3 backend ---
+    // --- scenarios ---
     listScenarios: (weekId: number) => fetchJson<Scenario[]>(`/baseline-weeks/${weekId}/scenarios`),
     createScenario: (weekId: number, payload: { name: string; params: any }) =>
         fetchJson<Scenario>(`/baseline-weeks/${weekId}/scenarios`, { method: "POST", body: JSON.stringify(payload) }),
-    runScenario: (scenarioId: number, payload: { runs: number; seed?: number | null; arrivals_sigma: number; spend_sigma: number }) =>
+    runScenario: (scenarioId: number, payload: { runs: number; seed?: number | null }) =>
         fetchJson<SimulationResponse>(`/scenarios/${scenarioId}/run`, { method: "POST", body: JSON.stringify(payload) }),
+    getScenarioKpis: (scenarioId: number) =>
+        fetchJson<ScenarioKpisResponse>(`/scenarios/${scenarioId}/kpis`),
 
+    // --- venue ---
     getVenue: () => fetchJson<Venue>("/venue"),
     updateVenue: (payload: {
         name: string;
@@ -69,9 +73,8 @@ export const api = {
         mode: string;
     }) => fetchJson<Venue>("/venue", { method: "PUT", body: JSON.stringify(payload) }),
 
-    getBaselineKpis: (weekId: number) =>
-        fetchJson<BaselineKpisResponse>(`/baseline-weeks/${weekId}/kpis`),
-
-    getBaselineGrid: (weekId: number) =>
-        fetchJson<BaselineGridCell[]>(`/baseline-weeks/${weekId}/grid`),
+    // --- simulation params ---
+    getSimParams: (weekId: number) => fetchJson<SimulationParams>(`/baseline-weeks/${weekId}/sim-params`),
+    updateSimParams: (weekId: number, payload: Omit<SimulationParams, "id" | "baseline_week_id">) =>
+        fetchJson<SimulationParams>(`/baseline-weeks/${weekId}/sim-params`, { method: "PUT", body: JSON.stringify(payload) }),
 };

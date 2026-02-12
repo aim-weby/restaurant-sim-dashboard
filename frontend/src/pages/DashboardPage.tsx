@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { BaselineCell, BaselineKpisResponse } from "../api/types";
+import type { BaselineCell, DataHealthResponse, KpisResponse } from "../api/types";
 import {
     ResponsiveContainer,
     BarChart,
@@ -43,9 +43,7 @@ function median(values: number[]) {
 function pct(v: number) {
     return `${(v * 100).toFixed(0)}%`;
 }
-function clamp(v: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, v));
-}
+
 
 function cardStyle(): React.CSSProperties {
     return {
@@ -99,7 +97,7 @@ export default function DashboardPage() {
     const { weekId } = useParams();
     const week = Number(weekId);
 
-    const [kpis, setKpis] = useState<BaselineKpisResponse | null>(null);
+    const [kpis, setKpis] = useState<KpisResponse | null>(null);
     const [grid, setGrid] = useState<BaselineCell[]>([]);
     const [dayparts, setDayparts] = useState<{ id: number; label: string; sort_order?: number }[]>([]);
 
@@ -109,10 +107,11 @@ export default function DashboardPage() {
     const [scenarioRun, setScenarioRun] = useState<SimulationResponseLite | null>(null);
 
     // run settings for scenario run directly from dashboard
-    const [runs, setRuns] = useState(300);
+    const [runs, setRuns] = useState(200);
     const [seed, setSeed] = useState<number | "">(42);
-    const [arrivalsSigma, setArrivalsSigma] = useState(0.2);
-    const [spendSigma, setSpendSigma] = useState(0.1);
+
+    // data health
+    const [health, setHealth] = useState<DataHealthResponse | null>(null);
 
     // AI mock panel
     const [aiOpen, setAiOpen] = useState(false);
@@ -137,17 +136,19 @@ export default function DashboardPage() {
             setLoading(true);
             setError(null);
             try {
-                const [k, g, dp, sc] = await Promise.all([
-                    api.getBaselineKpis(week),
+                const [k, g, dp, sc, h] = await Promise.all([
+                    api.getKpis(week),
                     api.getBaselineData(week),
                     api.listDayparts(),
-                    api.listScenarios(week), // ✅ už používáš ve ScenariosPage
+                    api.listScenarios(week),
+                    api.getHealth(week),
                 ]);
 
                 setKpis(k);
                 setGrid(g);
                 setDayparts(dp.map((d: any) => ({ id: d.id, label: d.label, sort_order: d.sort_order })));
                 setScenarios(sc as any);
+                setHealth(h);
 
                 // default scenario selection
                 const first = (sc as any[])?.[0]?.id;
@@ -311,15 +312,27 @@ export default function DashboardPage() {
             });
         }
 
-        const cov = cellStats.coverage;
-        lines.push({
-            title: "Data health",
-            body: `${Math.round(cov * 100)}% coverage (${cellStats.filled}/${cellStats.totalCells} cells). For stronger conclusions, collect 3–4 weeks.`,
-            tone: cov >= 0.8 ? "good" : "warn",
-        });
+        if (health) {
+            const cov = health.coverage_score;
+            const act = health.actionability_score;
+            const okChecks = health.checks.filter(c => c.status === "ok").length;
+            const total = health.checks.length;
+            lines.push({
+                title: "Data health",
+                body: `Coverage ${cov}% (${okChecks}/${total} checks OK). Actionability: ${act}/100.${health.recommendations.length > 0 ? " " + health.recommendations[0] : ""}`,
+                tone: cov >= 80 ? "good" : "warn",
+            });
+        } else {
+            const cov = cellStats.coverage;
+            lines.push({
+                title: "Data health",
+                body: `${Math.round(cov * 100)}% cell coverage (${cellStats.filled}/${cellStats.totalCells} cells). Loading detailed checks…`,
+                tone: cov >= 0.8 ? "good" : "warn",
+            });
+        }
 
         return lines.slice(0, 8);
-    }, [bestCells, cellStats, margin, primeRatio]);
+    }, [bestCells, cellStats, margin, primeRatio, health]);
 
     // ---- scenario delta helpers ----
     function simP50(metricKey: string) {
@@ -363,8 +376,6 @@ export default function DashboardPage() {
             const res = await api.runScenario(selectedScenarioId, {
                 runs,
                 seed: seed === "" ? null : Number(seed),
-                arrivals_sigma: clamp(arrivalsSigma, 0, 1),
-                spend_sigma: clamp(spendSigma, 0, 1),
             });
             setScenarioRun(res as any);
             // if AI panel open, regenerate mock text with new run
@@ -559,31 +570,6 @@ export default function DashboardPage() {
                                     />
                                 </label>
 
-                                <label style={{ display: "grid", gap: 6 }}>
-                                    Arrivals sigma
-                                    <input
-                                        type="number"
-                                        step="0.05"
-                                        min={0}
-                                        max={1}
-                                        value={arrivalsSigma}
-                                        onChange={(e) => setArrivalsSigma(Number(e.target.value))}
-                                        style={{ padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
-                                    />
-                                </label>
-
-                                <label style={{ display: "grid", gap: 6 }}>
-                                    Spend sigma
-                                    <input
-                                        type="number"
-                                        step="0.05"
-                                        min={0}
-                                        max={1}
-                                        value={spendSigma}
-                                        onChange={(e) => setSpendSigma(Number(e.target.value))}
-                                        style={{ padding: 10, borderRadius: 12, border: "1px solid #ddd" }}
-                                    />
-                                </label>
                             </div>
                         </div>
                     </div>
@@ -639,8 +625,8 @@ export default function DashboardPage() {
                     <details style={{ marginTop: 10 }}>
                         <summary>Raw JSON (scenario run)</summary>
                         <pre style={{ background: "#fafafa", padding: 12, borderRadius: 12, overflowX: "auto" }}>
-              {JSON.stringify(scenarioRun, null, 2)}
-            </pre>
+                            {JSON.stringify(scenarioRun, null, 2)}
+                        </pre>
                     </details>
                 </div>
 
@@ -679,8 +665,8 @@ export default function DashboardPage() {
                                     margin: 0,
                                 }}
                             >
-                {aiText}
-              </pre>
+                                {aiText}
+                            </pre>
                         ) : (
                             <div style={{ color: "#666" }}>{aiBusy ? "Generating insight…" : "Click Explain."}</div>
                         )}
@@ -845,37 +831,37 @@ export default function DashboardPage() {
                     <div style={{ marginTop: 10, overflowX: "auto" }}>
                         <table cellPadding={10} style={{ borderCollapse: "collapse", minWidth: 900, width: "100%" }}>
                             <thead>
-                            <tr style={{ textAlign: "left", borderBottom: "1px solid #eee" }}>
-                                <th>Weekday</th>
-                                {daypartsSorted.map((dp) => (
-                                    <th key={dp.id}>{dp.label}</th>
-                                ))}
-                            </tr>
+                                <tr style={{ textAlign: "left", borderBottom: "1px solid #eee" }}>
+                                    <th>Weekday</th>
+                                    {daypartsSorted.map((dp) => (
+                                        <th key={dp.id}>{dp.label}</th>
+                                    ))}
+                                </tr>
                             </thead>
                             <tbody>
-                            {heatmap.m.map((row, i) => (
-                                <tr key={i} style={{ borderBottom: "1px solid #f3f3f3" }}>
-                                    <td style={{ fontWeight: 700 }}>{WEEKDAYS[i]}</td>
-                                    {row.map((v, j) => {
-                                        const intensity = Math.max(0.06, v / heatmap.max);
-                                        return (
-                                            <td
-                                                key={j}
-                                                title={`${v.toFixed(0)} groups`}
-                                                style={{
-                                                    borderRadius: 10,
-                                                    background: `rgba(0, 153, 255, ${intensity})`,
-                                                    color: intensity > 0.55 ? "white" : "#111",
-                                                    fontWeight: 700,
-                                                    textAlign: "center",
-                                                }}
-                                            >
-                                                {v ? v.toFixed(0) : "—"}
-                                            </td>
-                                        );
-                                    })}
-                                </tr>
-                            ))}
+                                {heatmap.m.map((row, i) => (
+                                    <tr key={i} style={{ borderBottom: "1px solid #f3f3f3" }}>
+                                        <td style={{ fontWeight: 700 }}>{WEEKDAYS[i]}</td>
+                                        {row.map((v, j) => {
+                                            const intensity = Math.max(0.06, v / heatmap.max);
+                                            return (
+                                                <td
+                                                    key={j}
+                                                    title={`${v.toFixed(0)} groups`}
+                                                    style={{
+                                                        borderRadius: 10,
+                                                        background: `rgba(0, 153, 255, ${intensity})`,
+                                                        color: intensity > 0.55 ? "white" : "#111",
+                                                        fontWeight: 700,
+                                                        textAlign: "center",
+                                                    }}
+                                                >
+                                                    {v ? v.toFixed(0) : "—"}
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>

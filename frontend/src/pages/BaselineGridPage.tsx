@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useCallback } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { BaselineCell, Daypart } from "../api/types";
+import { useToast } from "../components/Toast";
+import { useUndoRedo } from "../hooks/useUndoRedo";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import type { Shortcut } from "../hooks/useKeyboardShortcuts";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
+import { useState } from "react";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -16,11 +21,13 @@ export default function BaselineGridPage() {
     const { weekId } = useParams();
     const week = Number(weekId);
     const nav = useNavigate();
+    const toast = useToast();
 
     const [dayparts, setDayparts] = useState<Daypart[]>([]);
-    const [cells, setCells] = useState<Record<string, BaselineCell>>({});
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+
+    const { state: cells, push: pushCells, undo, redo, reset: resetCells, canUndo, canRedo, historyLength } = useUndoRedo<Record<string, BaselineCell>>({});
 
     useEffect(() => {
         if (!Number.isFinite(week)) return;
@@ -29,10 +36,10 @@ export default function BaselineGridPage() {
                 setDayparts(dp);
                 const map: Record<string, BaselineCell> = {};
                 for (const c of data) map[keyOf(c.weekday, c.daypart_id)] = c;
-                setCells(map);
+                resetCells(map);
             })
             .catch((e) => setError(String(e)));
-    }, [week]);
+    }, [week, resetCells]);
 
     const grid = useMemo(() => {
         return WEEKDAYS.map((_, wd) =>
@@ -47,13 +54,14 @@ export default function BaselineGridPage() {
         );
     }, [cells, dayparts]);
 
-    function updateCell(weekday: number, daypartId: number, patch: Partial<BaselineCell>) {
+    const updateCell = useCallback((weekday: number, daypartId: number, patch: Partial<BaselineCell>) => {
         const k = keyOf(weekday, daypartId);
-        setCells((prev) => ({
-            ...prev,
-            [k]: { ...(prev[k] ?? { weekday, daypart_id: daypartId, arrivals_groups: 0, avg_spend_per_group: 0, avg_party_size: 0 }), ...patch },
-        }));
-    }
+        const newCells = {
+            ...cells,
+            [k]: { ...(cells[k] ?? { weekday, daypart_id: daypartId, arrivals_groups: 0, avg_spend_per_group: 0, avg_party_size: 0 }), ...patch },
+        };
+        pushCells(newCells);
+    }, [cells, pushCells]);
 
     async function saveAll() {
         setSaving(true);
@@ -66,13 +74,23 @@ export default function BaselineGridPage() {
                 avg_party_size: Number(c.avg_party_size),
             }));
             await api.putBaselineData(week, list);
+            toast.success("Grid saved successfully!");
             nav(`/baseline-weeks/${week}/kpis`);
         } catch (e) {
             setError(String(e));
+            toast.error("Save failed — check the error above.");
         } finally {
             setSaving(false);
         }
     }
+
+    // Keyboard shortcuts for undo/redo/save
+    const shortcuts: Shortcut[] = [
+        { key: "z", ctrl: true, label: "Undo", action: undo },
+        { key: "z", ctrl: true, shift: true, label: "Redo", action: redo },
+        { key: "s", ctrl: true, label: "Save grid", action: () => { saveAll(); } },
+    ];
+    useKeyboardShortcuts(shortcuts);
 
     if (!Number.isFinite(week)) return <div className="p-6 text-red-600">Invalid weekId.</div>;
 
@@ -80,6 +98,31 @@ export default function BaselineGridPage() {
         <div>
             <PageHeader title={`Baseline Grid — Week #${week}`} subtitle="Set arrivals, average spend, and party size for each weekday × daypart.">
                 <Link to={`/baseline-weeks/${week}/dashboard`} className="text-sm text-deep-blue hover:underline">← Dashboard</Link>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={undo}
+                        disabled={!canUndo}
+                        title="Undo (Ctrl+Z)"
+                        className={`p-1.5 rounded-lg transition-all ${canUndo ? "text-deep-blue hover:bg-deep-blue/10" : "text-grey/40 cursor-not-allowed"}`}
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                        </svg>
+                    </button>
+                    <button
+                        onClick={redo}
+                        disabled={!canRedo}
+                        title="Redo (Ctrl+Shift+Z)"
+                        className={`p-1.5 rounded-lg transition-all ${canRedo ? "text-deep-blue hover:bg-deep-blue/10" : "text-grey/40 cursor-not-allowed"}`}
+                    >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3" />
+                        </svg>
+                    </button>
+                    {historyLength > 0 && (
+                        <span className="text-[10px] text-grey">{historyLength} change{historyLength !== 1 ? "s" : ""}</span>
+                    )}
+                </div>
                 <Button onClick={saveAll} disabled={saving} size="sm">
                     {saving ? (
                         <span className="flex items-center gap-1.5">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/endpoints";
 import type { OpeningHoursItem } from "../api/types";
+import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
@@ -8,6 +9,7 @@ import Button from "../components/Button";
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export default function OpeningHoursPage() {
+    const toast = useToast();
     const [rows, setRows] = useState<OpeningHoursItem[]>([]);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirty] = useState(false);
@@ -38,8 +40,9 @@ export default function OpeningHoursPage() {
             setDirty(false);
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
+            toast.success("Opening hours saved!");
         } catch (e) {
-            alert(`Error saving: ${e}`);
+            toast.error(`Error saving: ${e}`);
         } finally {
             setSaving(false);
         }

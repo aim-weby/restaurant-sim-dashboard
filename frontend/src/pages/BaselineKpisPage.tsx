@@ -97,6 +97,102 @@ export default function BaselineKpisPage() {
                         })}
                     </div>
 
+                    {/* Break-even analysis */}
+                    {(() => {
+                        const kpis = data.kpis ?? {};
+                        const revenue = kpis["finance.revenue"] ?? 0;
+                        const cogs = kpis["finance.cogs"] ?? 0;
+                        const laborCost = kpis["finance.labor_cost"] ?? 0;
+                        const fixedCost = kpis["finance.fixed_cost"] ?? 0;
+                        const totalGroups = kpis["demand.arrivals_groups"] ?? 0;
+
+                        if (totalGroups === 0 || revenue === 0) return null;
+
+                        const revenuePerGroup = revenue / totalGroups;
+                        const cogsPerGroup = cogs / totalGroups;
+                        const laborPerGroup = laborCost / totalGroups;
+                        const contributionPerGroup = revenuePerGroup - cogsPerGroup - laborPerGroup;
+
+                        if (contributionPerGroup <= 0) {
+                            return (
+                                <Card className="p-5 mt-6" accent="red">
+                                    <div className="flex items-center gap-3 mb-2">
+                                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center text-white text-sm shadow-lg">⚠️</div>
+                                        <h3 className="text-sm font-bold text-mariana">Break-Even Analysis</h3>
+                                    </div>
+                                    <p className="text-sm text-grey">Contribution margin per group is negative — revenue per group doesn't cover variable costs. Adjust pricing or costs.</p>
+                                </Card>
+                            );
+                        }
+
+                        const breakEvenGroups = Math.ceil(fixedCost / contributionPerGroup);
+                        const breakEvenDaily = (breakEvenGroups / 7).toFixed(1);
+                        const safetyMargin = ((totalGroups - breakEvenGroups) / totalGroups) * 100;
+                        const utilizationPct = Math.min((totalGroups / breakEvenGroups) * 100, 200);
+
+                        return (
+                            <Card className="p-5 mt-6" accent={safetyMargin >= 0 ? "green" : "red"}>
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className={`w-8 h-8 rounded-xl bg-gradient-to-br ${safetyMargin >= 0 ? "from-emerald-500 to-green-600" : "from-red-500 to-rose-600"} flex items-center justify-center text-white text-sm shadow-lg`}>📐</div>
+                                    <div>
+                                        <h3 className="text-sm font-bold text-mariana">Break-Even Analysis</h3>
+                                        <p className="text-[10px] text-grey">How many groups you need to cover all costs</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+                                    <div>
+                                        <div className="text-[10px] text-grey uppercase tracking-wider">Break-Even Point</div>
+                                        <div className="text-xl font-extrabold text-mariana">{breakEvenGroups}</div>
+                                        <div className="text-[10px] text-grey">groups / week</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] text-grey uppercase tracking-wider">Daily Average</div>
+                                        <div className="text-xl font-extrabold text-mariana">{breakEvenDaily}</div>
+                                        <div className="text-[10px] text-grey">groups / day</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] text-grey uppercase tracking-wider">Current Demand</div>
+                                        <div className="text-xl font-extrabold text-mariana">{totalGroups}</div>
+                                        <div className="text-[10px] text-grey">groups / week</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] text-grey uppercase tracking-wider">Safety Margin</div>
+                                        <div className={`text-xl font-extrabold ${safetyMargin >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                            {safetyMargin >= 0 ? "+" : ""}{safetyMargin.toFixed(1)}%
+                                        </div>
+                                        <div className="text-[10px] text-grey">{safetyMargin >= 0 ? "above" : "below"} break-even</div>
+                                    </div>
+                                </div>
+
+                                {/* Visual bar */}
+                                <div className="relative h-4 bg-mist-dark/20 rounded-full overflow-hidden">
+                                    <div
+                                        className={`absolute inset-y-0 left-0 rounded-full transition-all duration-500 ${safetyMargin >= 0 ? "bg-gradient-to-r from-emerald-500 to-green-400" : "bg-gradient-to-r from-red-500 to-rose-400"}`}
+                                        style={{ width: `${Math.min(utilizationPct, 100)}%` }}
+                                    />
+                                    {/* Break-even marker */}
+                                    <div
+                                        className="absolute inset-y-0 w-0.5 bg-mariana/50"
+                                        style={{ left: `${Math.min((breakEvenGroups / Math.max(totalGroups, breakEvenGroups)) * 100, 100)}%` }}
+                                    >
+                                        <div className="absolute -top-5 -translate-x-1/2 text-[9px] font-bold text-mariana whitespace-nowrap">BE</div>
+                                    </div>
+                                </div>
+                                <div className="flex justify-between mt-1">
+                                    <span className="text-[9px] text-grey">0</span>
+                                    <span className="text-[9px] text-grey">{Math.max(totalGroups, breakEvenGroups)} groups</span>
+                                </div>
+
+                                <div className="mt-3 grid grid-cols-3 gap-3 text-[10px] text-grey border-t border-mist-dark/20 pt-3">
+                                    <div>Revenue/group: <span className="font-bold text-mariana">{formatValue("finance.x", revenuePerGroup)}</span></div>
+                                    <div>Variable cost/group: <span className="font-bold text-mariana">{formatValue("finance.x", cogsPerGroup + laborPerGroup)}</span></div>
+                                    <div>Contribution/group: <span className="font-bold text-mariana">{formatValue("finance.x", contributionPerGroup)}</span></div>
+                                </div>
+                            </Card>
+                        );
+                    })()}
+
                     {data.inputs_used && (
                         <details className="mt-6">
                             <summary className="text-sm text-grey cursor-pointer hover:text-mariana transition flex items-center gap-2">

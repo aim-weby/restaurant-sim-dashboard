@@ -35,6 +35,101 @@ body {
   min-height: 100vh;
 }
 
+/* ── Dark mode overrides ── */
+html.dark body {
+  background-color: #0d1117;
+  color: #c9d1d9;
+}
+
+html.dark .bg-white,
+html.dark .bg-white\/80 {
+  background-color: #161b22 !important;
+}
+
+html.dark .bg-mist {
+  background-color: #0d1117 !important;
+}
+
+html.dark input[type="text"],
+html.dark input[type="number"],
+html.dark input[type="date"],
+html.dark input[type="time"],
+html.dark input[type="email"],
+html.dark select,
+html.dark textarea {
+  background-color: #21262d;
+  border-color: #30363d;
+  color: #c9d1d9;
+}
+
+html.dark input[type="text"]::placeholder,
+html.dark input[type="number"]::placeholder,
+html.dark textarea::placeholder {
+  color: #636e7b;
+}
+
+html.dark input[type="text"]:focus,
+html.dark input[type="number"]:focus,
+html.dark input[type="date"]:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #3366ff;
+  box-shadow: 0 0 0 2px rgba(51, 102, 255, 0.2);
+}
+
+/* Dark mode cards */
+html.dark [class*="rounded-card"],
+html.dark .rounded-xl {
+  border-color: #30363d;
+}
+
+/* Dark mode text */
+html.dark .text-mariana {
+  color: #c9d1d9 !important;
+}
+
+html.dark .text-grey {
+  color: #8b949e !important;
+}
+
+/* Dark mode table */
+html.dark thead th {
+  background-color: rgba(110, 118, 129, 0.1) !important;
+  color: #8b949e !important;
+}
+
+html.dark tbody td {
+  border-color: #21262d !important;
+}
+
+html.dark tbody tr:hover {
+  background-color: rgba(51, 102, 255, 0.05) !important;
+}
+
+/* Dark mode error/warning */
+html.dark .bg-red-50 {
+  background-color: rgba(248, 81, 73, 0.1) !important;
+  border-color: rgba(248, 81, 73, 0.3) !important;
+}
+
+html.dark .bg-green-50 {
+  background-color: rgba(4, 255, 135, 0.1) !important;
+}
+
+html.dark .bg-amber-50 {
+  background-color: rgba(210, 153, 34, 0.1) !important;
+}
+
+/* Dark mode borders */
+html.dark [class*="border-mist"] {
+  border-color: #30363d !important;
+}
+
+/* Dark mode Card component bg */
+html.dark .bg-white {
+  background-color: #161b22 !important;
+}
+
 /* ── Global element resets ── */
 h1,
 h2,
@@ -87,4 +182,21 @@ tbody tr:hover {
 
 .recharts-tooltip-wrapper {
   @apply !rounded-card !shadow-lg;
+}
+
+/* ── Toast animations ── */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
 }

@@ -6,6 +6,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGri
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
+import { exportPdf } from "../utils/exportPdf";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const CB = "#3366FF";
@@ -175,6 +176,7 @@ export default function ReportPage() {
                         </>
                     )}
                     <Button variant="secondary" size="sm" onClick={exportJson}>📥 Export JSON</Button>
+                    <Button variant="secondary" size="sm" onClick={() => exportPdf("Restaurant Simulation Report")}>📄 Export PDF</Button>
                 </div>
             </PageHeader>
 

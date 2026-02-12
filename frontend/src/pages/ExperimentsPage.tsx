@@ -2,17 +2,24 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { ExperimentResult, ExperimentsResponse } from "../api/types";
-import { sectionStyle, cardStyle } from "../utils/styles";
+import PageHeader from "../components/PageHeader";
+import Card from "../components/Card";
+import Button from "../components/Button";
+import StatusBadge from "../components/StatusBadge";
 
 const METRICS = [
-    { key: "revenue", label: "Revenue", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
-    { key: "profit", label: "Profit", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
-    { key: "served_groups", label: "Served groups", fmt: (v: number) => v.toFixed(1) },
-    { key: "lost_groups", label: "Lost groups", fmt: (v: number) => v.toFixed(2) },
-    { key: "avg_wait_food", label: "Avg wait (food)", fmt: (v: number) => `${v.toFixed(1)} min` },
-    { key: "p90_wait_food", label: "P90 wait (food)", fmt: (v: number) => `${v.toFixed(1)} min` },
-    { key: "util_kitchen", label: "Kitchen util.", fmt: (v: number) => `${(v * 100).toFixed(1)}%` },
+    { key: "revenue", label: "Revenue", icon: "💰", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
+    { key: "profit", label: "Profit", icon: "📈", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
+    { key: "served_groups", label: "Served", icon: "✅", fmt: (v: number) => v.toFixed(1) },
+    { key: "lost_groups", label: "Lost", icon: "❌", fmt: (v: number) => v.toFixed(2) },
+    { key: "avg_wait_food", label: "Avg Wait", icon: "⏱️", fmt: (v: number) => `${v.toFixed(1)} min` },
+    { key: "p90_wait_food", label: "P90 Wait", icon: "⏳", fmt: (v: number) => `${v.toFixed(1)} min` },
+    { key: "util_kitchen", label: "Kitchen Util.", icon: "👨‍🍳", fmt: (v: number) => `${(v * 100).toFixed(1)}%` },
 ];
+
+const EXP_ICONS: Record<string, string> = {
+    baseline: "📋", add_kitchen_sat: "👨‍🍳", price_up_8: "💲", add_4_seats: "🪑", extend_fri_sat: "🌙", combined: "🔀",
+};
 
 export default function ExperimentsPage() {
     const [searchParams] = useSearchParams();
@@ -44,9 +51,7 @@ export default function ExperimentsPage() {
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = `experiments_week${weekId}_${runs}runs.json`;
-        a.click();
+        a.href = url; a.download = `experiments_week${weekId}_${runs}runs.json`; a.click();
         URL.revokeObjectURL(url);
     }
 
@@ -63,95 +68,101 @@ export default function ExperimentsPage() {
         const blob = new Blob([csv], { type: "text/csv" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = url;
-        a.download = `experiments_week${weekId}_${runs}runs.csv`;
-        a.click();
+        a.href = url; a.download = `experiments_week${weekId}_${runs}runs.csv`; a.click();
         URL.revokeObjectURL(url);
     }
 
     const deltaColor = (v: number, metric: string) => {
-        // For wait and lost metrics, lower is better (negative delta = green)
         const inverted = ["avg_wait_food", "p90_wait_food", "lost_groups"].includes(metric);
-        if (v === 0) return "#888";
+        if (v === 0) return "text-grey";
         const isGood = inverted ? v < 0 : v > 0;
-        return isGood ? "#16a34a" : "#dc2626";
+        return isGood ? "text-green-600" : "text-red-600";
     };
 
     return (
-        <div style={{ padding: 24, maxWidth: 1200, margin: "0 auto" }}>
-            <h1 style={{ fontWeight: 900, fontSize: 22, margin: 0 }}>BP Experiment Runner</h1>
-            <p style={{ color: "#666", fontSize: 13, margin: "6px 0 20px" }}>
-                Runs 6 predefined scenarios from the thesis spec (Section 13) against baseline week #{weekId}.
-                Results are reproducible (fixed seed) and exportable for thesis appendix.
-            </p>
+        <div>
+            <PageHeader
+                title="Experiment Runner"
+                subtitle={`Runs 6 predefined scenarios from the thesis spec against baseline week #${weekId}.`}
+            />
 
-            <div style={{ ...sectionStyle(), display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-                <label style={{ fontSize: 13 }}>
-                    Runs per experiment:
-                    <input
-                        type="number"
-                        value={runs}
-                        onChange={(e) => setRuns(Math.max(10, Number(e.target.value)))}
-                        style={{ width: 80, marginLeft: 8, padding: "4px 8px" }}
-                    />
-                </label>
-                <label style={{ fontSize: 13 }}>
-                    Seed:
-                    <input
-                        type="number"
-                        value={seed}
-                        onChange={(e) => setSeed(Number(e.target.value))}
-                        style={{ width: 80, marginLeft: 8, padding: "4px 8px" }}
-                    />
-                </label>
-                <button onClick={runAll} disabled={loading} style={{ padding: "8px 16px", fontWeight: 700 }}>
-                    {loading ? "Running experiments…" : "Run all experiments"}
-                </button>
-                {elapsed !== null && (
-                    <span style={{ color: "#666", fontSize: 12 }}>
-                        Completed in {elapsed}s ({data?.experiment_count} experiments × {runs} runs)
-                    </span>
-                )}
-            </div>
+            {/* Controls */}
+            <Card className="p-5 mb-6">
+                <div className="flex flex-wrap gap-4 items-end">
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-sm shadow-lg shadow-indigo-500/20">🧪</div>
+                        <div>
+                            <label className="block text-xs font-medium text-grey mb-1">Runs / experiment</label>
+                            <input
+                                type="number"
+                                value={runs}
+                                onChange={(e) => setRuns(Math.max(10, Number(e.target.value)))}
+                                className="!w-24"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-grey mb-1">Seed</label>
+                        <input
+                            type="number"
+                            value={seed}
+                            onChange={(e) => setSeed(Number(e.target.value))}
+                            className="!w-24"
+                        />
+                    </div>
+                    <Button onClick={runAll} disabled={loading}>
+                        {loading ? (
+                            <span className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                Running all…
+                            </span>
+                        ) : "▶ Run All Experiments"}
+                    </Button>
+                    {elapsed !== null && (
+                        <span className="flex items-center gap-1.5 text-xs text-algae-dark font-medium">
+                            <span className="w-2 h-2 rounded-full bg-algae-dark" />
+                            Done in {elapsed}s ({data?.experiment_count} × {runs} runs)
+                        </span>
+                    )}
+                </div>
+            </Card>
 
             {data && (
                 <>
                     {/* Export buttons */}
-                    <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
-                        <button onClick={exportJson} style={{ padding: "6px 12px", fontSize: 12 }}>
-                            Export JSON
-                        </button>
-                        <button onClick={exportCsv} style={{ padding: "6px 12px", fontSize: 12 }}>
-                            Export CSV
-                        </button>
+                    <div className="flex gap-2 mb-5">
+                        <Button variant="secondary" size="sm" onClick={exportJson}>📥 Export JSON</Button>
+                        <Button variant="secondary" size="sm" onClick={exportCsv}>📊 Export CSV</Button>
                     </div>
 
                     {/* Experiment cards */}
-                    <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+                    <div className="space-y-4 mb-6">
                         {data.experiments.map((exp: ExperimentResult) => (
-                            <div key={exp.id} style={sectionStyle()}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                                    <div>
-                                        <div style={{ fontWeight: 800, fontSize: 15 }}>{exp.name}</div>
-                                        <div style={{ color: "#666", fontSize: 12 }}>{exp.description}</div>
+                            <Card key={exp.id} className="p-5 group hover:scale-[1.003] transition-transform duration-200" accent={exp.id === "baseline" ? "blue" : "none"}>
+                                <div className="flex justify-between items-baseline mb-4">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="text-xl">{EXP_ICONS[exp.id] ?? "🧪"}</span>
+                                        <div>
+                                            <span className="font-bold text-mariana">{exp.name}</span>
+                                            <span className="ml-2 text-xs text-grey">{exp.description}</span>
+                                        </div>
                                     </div>
-                                    {exp.id === "baseline" && (
-                                        <span style={{ fontSize: 11, color: "#888", border: "1px solid #ddd", borderRadius: 6, padding: "2px 8px" }}>
-                                            REFERENCE
-                                        </span>
-                                    )}
+                                    {exp.id === "baseline" && <StatusBadge variant="info">REFERENCE</StatusBadge>}
                                 </div>
 
-                                <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: `repeat(${METRICS.length}, 1fr)`, gap: 8 }}>
-                                    {METRICS.map(m => {
+                                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                                    {METRICS.map((m) => {
                                         const mean = exp.summary[m.key]?.mean ?? 0;
                                         const delta = exp.deltas?.[m.key];
                                         return (
-                                            <div key={m.key} style={cardStyle()}>
-                                                <div style={{ color: "#666", fontSize: 11 }}>{m.label}</div>
-                                                <div style={{ fontSize: 16, fontWeight: 800 }}>{m.fmt(mean)}</div>
+                                            <div key={m.key} className="bg-mist/30 rounded-xl p-3 hover:bg-mist/50 transition-colors duration-200">
+                                                <div className="flex items-center gap-1 text-[10px] text-grey uppercase tracking-wider">
+                                                    <span>{m.icon}</span>
+                                                    <span>{m.label}</span>
+                                                </div>
+                                                <div className="text-sm font-bold text-mariana mt-1">{m.fmt(mean)}</div>
                                                 {delta && (
-                                                    <div style={{ fontSize: 11, fontWeight: 600, color: deltaColor(delta.delta, m.key), marginTop: 2 }}>
+                                                    <div className={`text-[10px] font-semibold mt-1 ${deltaColor(delta.delta, m.key)}`}>
                                                         {delta.delta >= 0 ? "+" : ""}{m.fmt(delta.delta)} ({delta.delta_pct >= 0 ? "+" : ""}{delta.delta_pct.toFixed(1)}%)
                                                     </div>
                                                 )}
@@ -159,51 +170,55 @@ export default function ExperimentsPage() {
                                         );
                                     })}
                                 </div>
-                            </div>
+                            </Card>
                         ))}
                     </div>
 
-                    {/* Comparison matrix table */}
-                    <div style={{ ...sectionStyle(), marginTop: 16, overflow: "auto" }}>
-                        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>
-                            Comparison Matrix (mean values + Δ%)
+                    {/* Comparison matrix */}
+                    <Card className="overflow-hidden">
+                        <div className="p-5 pb-0 flex items-center gap-2">
+                            <svg className="w-4 h-4 text-grey" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5M12 14.625v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 14.625c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m0 0v1.5c0 .621-.504 1.125-1.125 1.125m0 0h-7.5" /></svg>
+                            <h3 className="text-sm font-bold text-mariana">
+                                Comparison Matrix (mean ± Δ%)
+                            </h3>
                         </div>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                            <thead>
-                                <tr>
-                                    <th style={{ textAlign: "left", padding: "6px 10px", borderBottom: "2px solid #eee" }}>Scenario</th>
-                                    {METRICS.map(m => (
-                                        <th key={m.key} style={{ textAlign: "right", padding: "6px 10px", borderBottom: "2px solid #eee" }}>
-                                            {m.label}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {data.experiments.map((exp) => (
-                                    <tr key={exp.id} style={{ background: exp.id === "baseline" ? "rgba(99,102,241,0.04)" : "transparent" }}>
-                                        <td style={{ padding: "6px 10px", borderBottom: "1px solid #f0f0f0", fontWeight: 600 }}>
-                                            {exp.name}
-                                        </td>
-                                        {METRICS.map(m => {
-                                            const mean = exp.summary[m.key]?.mean ?? 0;
-                                            const delta = exp.deltas?.[m.key];
-                                            return (
-                                                <td key={m.key} style={{ textAlign: "right", padding: "6px 10px", borderBottom: "1px solid #f0f0f0" }}>
-                                                    {m.fmt(mean)}
-                                                    {delta && (
-                                                        <span style={{ marginLeft: 6, color: deltaColor(delta.delta, m.key), fontSize: 10, fontWeight: 600 }}>
-                                                            ({delta.delta_pct >= 0 ? "+" : ""}{delta.delta_pct.toFixed(1)}%)
-                                                        </span>
-                                                    )}
-                                                </td>
-                                            );
-                                        })}
+                        <div className="overflow-x-auto">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th className="!pl-5">Scenario</th>
+                                        {METRICS.map((m) => (
+                                            <th key={m.key} className="text-right">{m.icon} {m.label}</th>
+                                        ))}
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody>
+                                    {data.experiments.map((exp) => (
+                                        <tr key={exp.id} className={exp.id === "baseline" ? "bg-deep-blue/5" : ""}>
+                                            <td className="!pl-5 font-semibold">
+                                                <span className="mr-1">{EXP_ICONS[exp.id] ?? "🧪"}</span>
+                                                {exp.name}
+                                            </td>
+                                            {METRICS.map((m) => {
+                                                const mean = exp.summary[m.key]?.mean ?? 0;
+                                                const delta = exp.deltas?.[m.key];
+                                                return (
+                                                    <td key={m.key} className="text-right">
+                                                        {m.fmt(mean)}
+                                                        {delta && (
+                                                            <span className={`ml-1 text-[10px] font-semibold ${deltaColor(delta.delta, m.key)}`}>
+                                                                ({delta.delta_pct >= 0 ? "+" : ""}{delta.delta_pct.toFixed(1)}%)
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
                 </>
             )}
         </div>

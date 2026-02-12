@@ -1,29 +1,25 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { Venue } from "../api/types";
+import PageHeader from "../components/PageHeader";
+import Card from "../components/Card";
+import Button from "../components/Button";
 
 export default function VenueSettingsPage() {
     const [venue, setVenue] = useState<Venue | null>(null);
     const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        async function load() {
-            setError(null);
-            try {
-                setVenue(await api.getVenue());
-            } catch (e) {
-                setError(String(e));
-            }
-        }
-        load();
+        api.getVenue().then(setVenue).catch((e) => setError(String(e)));
     }, []);
 
     async function onSave() {
         if (!venue) return;
         setSaving(true);
         setError(null);
+        setSaved(false);
         try {
             const updated = await api.updateVenue({
                 name: venue.name,
@@ -34,6 +30,8 @@ export default function VenueSettingsPage() {
                 mode: venue.mode,
             });
             setVenue(updated);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
         } catch (e) {
             setError(String(e));
         } finally {
@@ -41,65 +39,64 @@ export default function VenueSettingsPage() {
         }
     }
 
-    if (error) return <div style={{ padding: 24 }}>Error: {error}</div>;
-    if (!venue) return <div style={{ padding: 24 }}>Loading…</div>;
+    if (error && !venue) return <div className="p-6 text-red-600">Error: {error}</div>;
+    if (!venue) return <div className="p-6 text-grey animate-pulse">Loading…</div>;
+
+    const fields = [
+        { label: "Restaurant Name", key: "name" as const, type: "text" },
+        { label: "Timezone", key: "timezone" as const, type: "text" },
+        { label: "Currency", key: "currency" as const, type: "text" },
+        { label: "Total Seats", key: "seats_total" as const, type: "number" },
+        { label: "Table Count", key: "tables_count" as const, type: "number" },
+    ];
 
     return (
-        <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 640 }}>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <Link to="/baseline-weeks">← Weeks</Link>
-            </div>
+        <div className="max-w-xl">
+            <PageHeader title="Venue Settings" subtitle="Configure your restaurant's basic parameters" />
 
-            <h1>Venue settings</h1>
+            <Card className="p-6">
+                <div className="space-y-5">
+                    {fields.map(({ label, key, type }) => (
+                        <div key={key}>
+                            <label className="block text-sm font-medium text-mariana mb-1.5">{label}</label>
+                            <input
+                                type={type}
+                                value={venue[key]}
+                                onChange={(e) =>
+                                    setVenue({
+                                        ...venue,
+                                        [key]: type === "number" ? Number(e.target.value) : e.target.value,
+                                    })
+                                }
+                            />
+                        </div>
+                    ))}
 
-            <label style={{ display: "block", marginTop: 12 }}>
-                Name
-                <input style={{ width: "100%", padding: 8 }} value={venue.name} onChange={(e) => setVenue({ ...venue, name: e.target.value })} />
-            </label>
+                    <div>
+                        <label className="block text-sm font-medium text-mariana mb-1.5">Operating Mode</label>
+                        <select
+                            value={venue.mode}
+                            onChange={(e) => setVenue({ ...venue, mode: e.target.value })}
+                        >
+                            <option value="dinein">Dine-in</option>
+                            <option value="delivery_only">Delivery Only</option>
+                        </select>
+                    </div>
 
-            <label style={{ display: "block", marginTop: 12 }}>
-                Timezone
-                <input style={{ width: "100%", padding: 8 }} value={venue.timezone} onChange={(e) => setVenue({ ...venue, timezone: e.target.value })} />
-            </label>
+                    {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <label style={{ display: "block", marginTop: 12 }}>
-                Currency
-                <input style={{ width: "100%", padding: 8 }} value={venue.currency} onChange={(e) => setVenue({ ...venue, currency: e.target.value })} />
-            </label>
-
-            <label style={{ display: "block", marginTop: 12 }}>
-                Seats total
-                <input
-                    type="number"
-                    style={{ width: "100%", padding: 8 }}
-                    value={venue.seats_total}
-                    onChange={(e) => setVenue({ ...venue, seats_total: Number(e.target.value) })}
-                />
-            </label>
-
-            <label style={{ display: "block", marginTop: 12 }}>
-                Tables count
-                <input
-                    type="number"
-                    style={{ width: "100%", padding: 8 }}
-                    value={venue.tables_count}
-                    onChange={(e) => setVenue({ ...venue, tables_count: Number(e.target.value) })}
-                />
-            </label>
-
-            <label style={{ display: "block", marginTop: 12 }}>
-                Mode
-                <select style={{ width: "100%", padding: 8 }} value={venue.mode} onChange={(e) => setVenue({ ...venue, mode: e.target.value })}>
-                    <option value="dinein">dinein</option>
-                    <option value="delivery_only">delivery_only</option>
-                </select>
-            </label>
-
-            <button onClick={onSave} disabled={saving} style={{ marginTop: 16, padding: "10px 14px" }}>
-                {saving ? "Saving…" : "Save"}
-            </button>
-
-            {error && <p style={{ color: "crimson" }}>{error}</p>}
+                    <div className="flex items-center gap-3 pt-2">
+                        <Button onClick={onSave} disabled={saving}>
+                            {saving ? "Saving…" : "Save Settings"}
+                        </Button>
+                        {saved && (
+                            <span className="text-sm text-algae-dark font-medium animate-pulse">
+                                ✓ Saved
+                            </span>
+                        )}
+                    </div>
+                </div>
+            </Card>
         </div>
     );
 }

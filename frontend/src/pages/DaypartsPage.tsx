@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { Daypart } from "../api/types";
+import PageHeader from "../components/PageHeader";
+import Card from "../components/Card";
+import Button from "../components/Button";
 
 export default function DaypartsPage() {
     const [items, setItems] = useState<Daypart[]>([]);
@@ -25,23 +27,17 @@ export default function DaypartsPage() {
         }
     }
 
-    useEffect(() => {
-        load();
-    }, []);
+    useEffect(() => { load(); }, []);
 
     async function addDaypart() {
         setError(null);
         try {
-            // pozor: v api/endpoints.ts zatím nemáš createDaypart/updateDaypart/deleteDaypart
-            // takže použijeme fetchJson přímo nebo doplníme endpoints. Nejčistší je doplnit endpoints.
-            // Pro teď použijeme fetchJson přes api layer rozšířením: viz níže v poznámce.
             await api.createDaypart({
                 label: newLabel.trim(),
                 start_time: newStart,
                 end_time: newEnd,
                 sort_order: Number(newOrder),
             });
-
             setNewLabel("");
             await load();
         } catch (e) {
@@ -53,10 +49,8 @@ export default function DaypartsPage() {
         setError(null);
         try {
             await api.updateDaypart(dp.id, {
-                label: dp.label,
-                start_time: dp.start_time,
-                end_time: dp.end_time,
-                sort_order: dp.sort_order,
+                label: dp.label, start_time: dp.start_time,
+                end_time: dp.end_time, sort_order: dp.sort_order,
             });
             await load();
         } catch (e) {
@@ -67,84 +61,96 @@ export default function DaypartsPage() {
     async function deleteDaypart(id: number) {
         if (!confirm("Delete this daypart?")) return;
         setError(null);
-        try {
-            await api.deleteDaypart(id);
-            await load();
-        } catch (e) {
-            setError(String(e));
-        }
+        try { await api.deleteDaypart(id); await load(); }
+        catch (e) { setError(String(e)); }
     }
 
     return (
-        <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 900 }}>
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                <Link to="/baseline-weeks">← Weeks</Link>
-            </div>
+        <div>
+            <PageHeader title="Dayparts" subtitle="Define the time slots for your operating day (e.g. Lunch, Dinner)." />
 
-            <h1>Dayparts</h1>
-
-            <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd", borderRadius: 8 }}>
-                <h3 style={{ marginTop: 0 }}>Add daypart</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 8 }}>
-                    <input placeholder="Label (e.g. Lunch)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
-                    <input value={newStart} onChange={(e) => setNewStart(e.target.value)} />
-                    <input value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
-                    <input type="number" value={newOrder} onChange={(e) => setNewOrder(Number(e.target.value))} />
-                    <button onClick={addDaypart} disabled={!newLabel.trim()}>
-                        Add
-                    </button>
+            {/* Add new daypart */}
+            <Card className="p-5 mb-6">
+                <h3 className="text-sm font-semibold text-mariana mb-3">Add Daypart</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
+                    <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-grey mb-1">Label</label>
+                        <input
+                            type="text"
+                            placeholder="e.g. Lunch"
+                            value={newLabel}
+                            onChange={(e) => setNewLabel(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-grey mb-1">Start</label>
+                        <input type="time" value={newStart} onChange={(e) => setNewStart(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-grey mb-1">End</label>
+                        <input type="time" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
+                    </div>
+                    <div>
+                        <Button onClick={addDaypart} disabled={!newLabel.trim()} size="md" className="w-full">
+                            Add
+                        </Button>
+                    </div>
                 </div>
-                <p style={{ marginBottom: 0, color: "#666" }}>
-                    Times are HH:MM strings for BP MVP. You can refine validation later.
-                </p>
-            </div>
+            </Card>
 
-            {error && <p style={{ color: "crimson" }}>{error}</p>}
+            {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+
+            {/* Existing dayparts */}
             {loading ? (
-                <p>Loading…</p>
+                <p className="text-grey animate-pulse">Loading…</p>
+            ) : items.length === 0 ? (
+                <Card className="p-8 text-center text-grey">No dayparts yet. Add one above.</Card>
             ) : (
-                <div style={{ marginTop: 16 }}>
-                    {items.length === 0 ? (
-                        <p>No dayparts yet.</p>
-                    ) : (
-                        <table width="100%" cellPadding={8} style={{ borderCollapse: "collapse" }}>
-                            <thead>
-                            <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                                <th>Label</th>
+                <Card className="overflow-hidden">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th className="!pl-5">Label</th>
                                 <th>Start</th>
                                 <th>End</th>
                                 <th>Order</th>
-                                <th>Actions</th>
+                                <th className="text-right !pr-5">Actions</th>
                             </tr>
-                            </thead>
-                            <tbody>
+                        </thead>
+                        <tbody>
                             {items.map((dp, idx) => (
-                                <tr key={dp.id} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                                    <td>
+                                <tr key={dp.id}>
+                                    <td className="!pl-5">
                                         <input
+                                            type="text"
                                             value={dp.label}
                                             onChange={(e) => {
                                                 const v = e.target.value;
                                                 setItems((prev) => prev.map((x, i) => (i === idx ? { ...x, label: v } : x)));
                                             }}
+                                            className="!w-40"
                                         />
                                     </td>
                                     <td>
                                         <input
+                                            type="time"
                                             value={dp.start_time}
                                             onChange={(e) => {
                                                 const v = e.target.value;
                                                 setItems((prev) => prev.map((x, i) => (i === idx ? { ...x, start_time: v } : x)));
                                             }}
+                                            className="!w-28"
                                         />
                                     </td>
                                     <td>
                                         <input
+                                            type="time"
                                             value={dp.end_time}
                                             onChange={(e) => {
                                                 const v = e.target.value;
                                                 setItems((prev) => prev.map((x, i) => (i === idx ? { ...x, end_time: v } : x)));
                                             }}
+                                            className="!w-28"
                                         />
                                     </td>
                                     <td>
@@ -155,23 +161,21 @@ export default function DaypartsPage() {
                                                 const v = Number(e.target.value);
                                                 setItems((prev) => prev.map((x, i) => (i === idx ? { ...x, sort_order: v } : x)));
                                             }}
+                                            className="!w-20"
                                         />
                                     </td>
-                                    <td style={{ display: "flex", gap: 8 }}>
-                                        <button onClick={() => saveDaypart(dp)}>Save</button>
-                                        <button onClick={() => deleteDaypart(dp.id)}>Delete</button>
+                                    <td className="!pr-5">
+                                        <div className="flex gap-2 justify-end">
+                                            <Button variant="secondary" size="sm" onClick={() => saveDaypart(dp)}>Save</Button>
+                                            <Button variant="danger" size="sm" onClick={() => deleteDaypart(dp.id)}>Delete</Button>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
+                        </tbody>
+                    </table>
+                </Card>
             )}
-
-            <div style={{ marginTop: 18 }}>
-                <button onClick={load}>Reload</button>
-            </div>
         </div>
     );
 }

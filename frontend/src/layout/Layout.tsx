@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useKeyboardShortcuts, KeyboardShortcutHelp } from "../hooks/useKeyboardShortcuts";
 import type { Shortcut } from "../hooks/useKeyboardShortcuts";
 import { useTheme } from "../components/ThemeProvider";
+import { useI18n } from "../i18n/I18nProvider";
 import Breadcrumbs from "../components/Breadcrumbs";
 
 /* ── Sidebar icons (inline SVG paths) ── */
@@ -56,6 +57,14 @@ const links = [
         ]
     },
     {
+        label: "Advanced", items: [
+            { to: "/what-if", label: "What-If Explorer" },
+            { to: "/goal-seek", label: "Goal-Seek" },
+            { to: "/trends", label: "Trend Forecast" },
+            { to: "/compare", label: "A/B Compare" },
+        ]
+    },
+    {
         label: "Info", items: [
             { to: "/about", label: "About & Methodology" },
         ]
@@ -67,6 +76,7 @@ export default function Layout() {
     const [helpOpen, setHelpOpen] = useState(false);
     const navigate = useNavigate();
     const { theme, toggle: toggleTheme } = useTheme();
+    const { locale, setLocale } = useI18n();
 
     const shortcuts: Shortcut[] = [
         { key: "b", ctrl: true, label: "Go to Baseline Weeks", action: () => navigate("/baseline-weeks") },
@@ -140,6 +150,13 @@ export default function Layout() {
                     <span className="text-[10px] text-white/25">BP Thesis · VŠE 2026</span>
                     <div className="flex items-center gap-2">
                         <button
+                            onClick={() => setLocale(locale === "cs" ? "en" : "cs")}
+                            className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-all text-[10px] font-bold"
+                            title={locale === "cs" ? "Switch to English" : "Přepnout na češtinu"}
+                        >
+                            {locale === "cs" ? "🇬🇧" : "🇨🇿"}
+                        </button>
+                        <button
                             onClick={toggleTheme}
                             className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-all"
                             title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
@@ -192,6 +209,26 @@ export default function Layout() {
 
             {/* Keyboard shortcut help dialog */}
             <KeyboardShortcutHelp shortcuts={shortcuts} open={helpOpen} onClose={() => setHelpOpen(false)} />
+
+            {/* Mobile bottom nav */}
+            <nav className="fixed bottom-0 inset-x-0 z-30 bg-white/90 dark:bg-[#161b22]/90 backdrop-blur-md border-t border-mist-dark/30 flex items-center justify-around py-2 lg:hidden">
+                {[
+                    { to: "/baseline-weeks", emoji: "📋", label: "Weeks" },
+                    { to: "/what-if", emoji: "🎛️", label: "What-If" },
+                    { to: "/report", emoji: "📊", label: "Report" },
+                    { to: "/trends", emoji: "📈", label: "Trends" },
+                    { to: "/compare", emoji: "⚖️", label: "Compare" },
+                ].map((item) => (
+                    <NavLink
+                        key={item.to}
+                        to={item.to}
+                        className={({ isActive }) => `flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg transition ${isActive ? "text-deep-blue" : "text-grey hover:text-mariana"}`}
+                    >
+                        <span className="text-lg">{item.emoji}</span>
+                        <span className="text-[9px] font-medium">{item.label}</span>
+                    </NavLink>
+                ))}
+            </nav>
         </div>
     );
 }

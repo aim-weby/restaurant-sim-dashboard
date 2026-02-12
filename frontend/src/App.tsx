@@ -16,6 +16,10 @@ import SimParamsPage from "./pages/SimParamsPage";
 import ExperimentsPage from "./pages/ExperimentsPage";
 import OpeningHoursPage from "./pages/OpeningHoursPage";
 import AboutPage from "./pages/AboutPage";
+import WhatIfPage from "./pages/WhatIfPage";
+import GoalSeekPage from "./pages/GoalSeekPage";
+import TrendPage from "./pages/TrendPage";
+import ComparePage from "./pages/ComparePage";
 
 export default function App() {
     return (
@@ -42,6 +46,12 @@ export default function App() {
                 <Route path="/experiments" element={<ExperimentsPage />} />
                 <Route path="/settings/opening-hours" element={<OpeningHoursPage />} />
                 <Route path="/about" element={<AboutPage />} />
+
+                {/* Wave 2 routes */}
+                <Route path="/what-if" element={<WhatIfPage />} />
+                <Route path="/goal-seek" element={<GoalSeekPage />} />
+                <Route path="/trends" element={<TrendPage />} />
+                <Route path="/compare" element={<ComparePage />} />
 
                 <Route path="*" element={<div style={{ padding: 24 }}>Not found</div>} />
             </Route>

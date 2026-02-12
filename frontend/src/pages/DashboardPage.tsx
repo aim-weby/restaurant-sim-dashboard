@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { BaselineCell, DataHealthResponse, KpisResponse } from "../api/types";
+import type { BaselineCell, DataHealthResponse, InsightItem, KpisResponse } from "../api/types";
 import {
     ResponsiveContainer,
     BarChart,
@@ -113,9 +113,9 @@ export default function DashboardPage() {
     // data health
     const [health, setHealth] = useState<DataHealthResponse | null>(null);
 
-    // AI mock panel
+    // AI / insights panel
     const [aiOpen, setAiOpen] = useState(false);
-    const [aiText, setAiText] = useState<string | null>(null);
+    const [aiInsights, setAiInsights] = useState<InsightItem[]>([]);
     const [aiBusy, setAiBusy] = useState(false);
 
     const [loading, setLoading] = useState(true);
@@ -360,9 +360,8 @@ export default function DashboardPage() {
         };
     }, [scenarioRun, profit, revenue, cogs]);
 
-    const selectedScenario = useMemo(() => {
-        return scenarios.find((s) => s.id === selectedScenarioId) ?? null;
-    }, [scenarios, selectedScenarioId]);
+
+
 
     async function runSelectedScenario() {
         if (!selectedScenarioId) {
@@ -380,66 +379,21 @@ export default function DashboardPage() {
             setScenarioRun(res as any);
             // if AI panel open, regenerate mock text with new run
             if (aiOpen) {
-                setAiText(null);
+                setAiInsights([]);
             }
         } catch (e) {
             setError(String(e));
         }
     }
 
-    function makeAiMock(): string {
-        const name = selectedScenario?.name ?? "Scenario";
-        const lines: string[] = [];
-
-        lines.push(`AI (MVP mock) — quick interpretation for "${name}"`);
-        lines.push("");
-
-        // Baseline overview
-        lines.push(`Baseline revenue: ${fmtCurrency(revenue)} · profit: ${fmtCurrency(profit)} · margin: ${fmtPercent(margin)}.`);
-        lines.push(`Prime cost ratio: ${fmtPercent(primeRatio)} (COGS + labor over revenue).`);
-        lines.push(`Total groups (KPI): ${arrivals.toFixed(0)}.`);
-
-        // Scenario deltas
-        if (!scenarioRun) {
-            lines.push("");
-            lines.push("No scenario run yet. Click “Run scenario” to generate deltas & uncertainty bands (p10–p90).");
-            return lines.join("\n");
-        }
-
-        const pProfit = scenarioDelta.profit?.delta ?? 0;
-        const pRev = scenarioDelta.revenue?.delta ?? 0;
-        const pLost = scenarioDelta.lost?.scen ?? 0;
-
-        lines.push("");
-        lines.push("Scenario impact (vs baseline, using p50 / median of simulation):");
-        if (scenarioDelta.profit) {
-            lines.push(`• Profit: ${fmtCurrency(scenarioDelta.profit.scen)} (${pProfit >= 0 ? "+" : ""}${fmtCurrency(pProfit)})`);
-        }
-        if (scenarioDelta.revenue) {
-            lines.push(`• Revenue: ${fmtCurrency(scenarioDelta.revenue.scen)} (${pRev >= 0 ? "+" : ""}${fmtCurrency(pRev)})`);
-        }
-        if (scenarioDelta.cogs) {
-            const d = scenarioDelta.cogs.delta;
-            lines.push(`• COGS: ${fmtCurrency(scenarioDelta.cogs.scen)} (${d >= 0 ? "+" : ""}${fmtCurrency(d)})`);
-        }
-        lines.push(`• Lost groups (capacity): ${pLost.toFixed(2)} (lower is better)`);
-
-        lines.push("");
-        lines.push("Next actions (mock):");
-        lines.push("1) If profit ↑ but lost_groups also ↑, consider adding kitchen/service capacity in the peak daypart only.");
-        lines.push("2) If revenue ↑ but margin ↓, check food cost % and upsell mix (drinks / high-margin items).");
-        lines.push("3) Collect at least 3–4 weeks to validate seasonality and stability.");
-
-        return lines.join("\n");
-    }
-
     async function onExplain() {
         setAiOpen(true);
         setAiBusy(true);
         try {
-            // simulate async AI call (frontend mock)
-            await new Promise((r) => setTimeout(r, 350));
-            setAiText(makeAiMock());
+            const res = await api.getInsights(week);
+            setAiInsights(res.insights);
+        } catch (e) {
+            setAiInsights([{ id: "error", category: "data", severity: "warning", text: `Failed to load insights: ${e}` }]);
         } finally {
             setAiBusy(false);
         }
@@ -630,67 +584,58 @@ export default function DashboardPage() {
                     </details>
                 </div>
 
-                {/* AI mock panel */}
+                {/* Rule-based insights panel */}
                 <div style={sectionStyle()}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                         <div>
-                            <div style={{ fontWeight: 900, fontSize: 16 }}>AI Insights (MVP)</div>
-                            <div style={{ color: "#666", fontSize: 12 }}>Frontend mock. Later → backend /ai/insights.</div>
+                            <div style={{ fontWeight: 900, fontSize: 16 }}>Rule-Based Insights</div>
+                            <div style={{ color: "#666", fontSize: 12 }}>Analyzed from KPIs + data health against industry benchmarks.</div>
                         </div>
                         <button onClick={onExplain} style={{ padding: "8px 12px" }}>
                             {aiBusy ? "Thinking…" : "Explain"}
                         </button>
                     </div>
 
-                    <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                        <div style={{ color: "#666", fontSize: 12 }}>
-                            Selected scenario: <b>{selectedScenario?.name ?? "none"}</b>
-                        </div>
 
-                        {!aiOpen ? (
-                            <div style={{ color: "#666" }}>
-                                Click <b>Explain</b> to get interpretation, weak spots, and suggested next steps.
-                            </div>
-                        ) : aiText ? (
-                            <pre
-                                style={{
-                                    whiteSpace: "pre-wrap",
-                                    background: "rgba(0,0,0,0.03)",
-                                    padding: 12,
-                                    borderRadius: 14,
-                                    border: "1px solid rgba(0,0,0,0.08)",
-                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                                    fontSize: 12,
-                                    lineHeight: 1.5,
-                                    margin: 0,
-                                }}
-                            >
-                                {aiText}
-                            </pre>
-                        ) : (
-                            <div style={{ color: "#666" }}>{aiBusy ? "Generating insight…" : "Click Explain."}</div>
-                        )}
-
-                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                            <button
-                                onClick={() => {
-                                    setAiOpen(true);
-                                    setAiText(makeAiMock());
-                                }}
-                                style={{ padding: "8px 10px" }}
-                            >
-                                Regenerate
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setAiOpen(false);
-                                    setAiText(null);
-                                }}
-                                style={{ padding: "8px 10px" }}
-                            >
-                                Clear
-                            </button>
+                    {!aiOpen ? (
+                        <div style={{ color: "#666" }}>
+                            Click <b>Explain</b> to get rule-based insights, weak spots, and suggestions.
                         </div>
+                    ) : aiInsights.length > 0 ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                            {aiInsights.map((ins) => {
+                                const badge = ins.severity === "critical" ? "\ud83d\udd34" : ins.severity === "warning" ? "\ud83d\udfe1" : ins.severity === "positive" ? "\ud83d\udfe2" : "\ud83d\udca1";
+                                const bg = ins.severity === "critical" ? "rgba(220,38,38,0.06)" : ins.severity === "warning" ? "rgba(245,158,11,0.06)" : ins.severity === "positive" ? "rgba(22,163,74,0.06)" : "rgba(99,102,241,0.06)";
+                                return (
+                                    <div key={ins.id} style={{ padding: 10, borderRadius: 10, background: bg, border: "1px solid rgba(0,0,0,0.05)", fontSize: 13, lineHeight: 1.5 }}>
+                                        <span style={{ marginRight: 6 }}>{badge}</span>
+                                        <span style={{ fontWeight: 600, textTransform: "capitalize", fontSize: 11, color: "#888" }}>{ins.category}</span>
+                                        <span style={{ margin: "0 6px", color: "#ccc" }}>{"·"}</span>
+                                        {ins.text}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div style={{ color: "#666" }}>{aiBusy ? "Analyzing KPIs\u2026" : "Click Explain."}</div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        <button
+                            onClick={onExplain}
+                            style={{ padding: "8px 10px" }}
+                        >
+                            {aiBusy ? "Analyzing\u2026" : "Refresh insights"}
+                        </button>
+                        <button
+                            onClick={() => {
+                                setAiOpen(false);
+                                setAiInsights([]);
+                            }}
+                            style={{ padding: "8px 10px" }}
+                        >
+                            Clear
+                        </button>
                     </div>
                 </div>
             </div>
@@ -867,6 +812,6 @@ export default function DashboardPage() {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }

@@ -13,6 +13,9 @@ import ScenariosPage from "./pages/ScenariosPage";
 import DaypartsPage from "./pages/DaypartsPage";
 import VenueSettingsPage from "./pages/VenueSettingsPage";
 import SimParamsPage from "./pages/SimParamsPage";
+import ExperimentsPage from "./pages/ExperimentsPage";
+import OpeningHoursPage from "./pages/OpeningHoursPage";
+import AboutPage from "./pages/AboutPage";
 
 export default function App() {
     return (
@@ -36,6 +39,9 @@ export default function App() {
                 <Route path="/dayparts" element={<DaypartsPage />} />
                 <Route path="/settings/venue" element={<VenueSettingsPage />} />
                 <Route path="/baseline-weeks/:weekId/sim-params" element={<SimParamsPage />} />
+                <Route path="/experiments" element={<ExperimentsPage />} />
+                <Route path="/settings/opening-hours" element={<OpeningHoursPage />} />
+                <Route path="/about" element={<AboutPage />} />
 
                 <Route path="*" element={<div style={{ padding: 24 }}>Not found</div>} />
             </Route>

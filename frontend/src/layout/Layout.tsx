@@ -18,7 +18,10 @@ export default function Layout() {
                 <NavLink to="/staffing" style={linkStyle}>Staffing</NavLink>
                 <NavLink to="/simulation" style={linkStyle}>Simulation</NavLink>
                 <NavLink to="/settings/venue" style={linkStyle}>Venue</NavLink>
+                <NavLink to="/settings/opening-hours" style={linkStyle}>Hours</NavLink>
                 <NavLink to="/report" style={linkStyle}>Report</NavLink>
+                <NavLink to="/experiments" style={linkStyle}>Experiments</NavLink>
+                <NavLink to="/about" style={linkStyle}>About</NavLink>
             </div>
 
             <Outlet />

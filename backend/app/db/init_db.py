@@ -11,5 +11,6 @@ def init_db() -> None:
     from app.models.staffing_plan import StaffingPlan  # noqa: F401
     from app.models.simulation_scenario import SimulationScenario  # noqa: F401
     from app.models.simulation_params import SimulationParams  # noqa: F401
+    from app.models.opening_hours import OpeningHours  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

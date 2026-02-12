@@ -5,7 +5,10 @@ import type {
     Costs,
     DataHealthResponse,
     Daypart,
+    ExperimentsResponse,
+    InsightsResponse,
     KpisResponse,
+    OpeningHoursItem,
     Scenario,
     ScenarioKpisResponse,
     SimulationParams,
@@ -49,6 +52,9 @@ export const api = {
     upsertStaffing: (rows: StaffingRow[]) =>
         fetchJson<StaffingRow[]>("/staffing", { method: "PUT", body: JSON.stringify(rows) }),
 
+    // --- insights ---
+    getInsights: (weekId: number) => fetchJson<InsightsResponse>(`/baseline-weeks/${weekId}/insights`),
+
     // --- simulation ---
     runSimulation: (payload: SimulationRunRequest) =>
         fetchJson<SimulationResponse>("/simulation/run", { method: "POST", body: JSON.stringify(payload) }),
@@ -77,4 +83,16 @@ export const api = {
     getSimParams: (weekId: number) => fetchJson<SimulationParams>(`/baseline-weeks/${weekId}/sim-params`),
     updateSimParams: (weekId: number, payload: Omit<SimulationParams, "id" | "baseline_week_id">) =>
         fetchJson<SimulationParams>(`/baseline-weeks/${weekId}/sim-params`, { method: "PUT", body: JSON.stringify(payload) }),
+
+    // --- experiments ---
+    runExperiments: (weekId: number, runs = 200, seed = 42) =>
+        fetchJson<ExperimentsResponse>(`/experiments/run?baseline_week_id=${weekId}&runs=${runs}&seed=${seed}`, { method: "POST" }),
+
+    // --- opening hours ---
+    getOpeningHours: () => fetchJson<OpeningHoursItem[]>("/opening-hours"),
+    updateOpeningHours: (items: OpeningHoursItem[]) =>
+        fetchJson<OpeningHoursItem[]>("/opening-hours", { method: "PUT", body: JSON.stringify(items) }),
+
+    // --- seed ---
+    seedDemo: () => fetchJson<{ status: string; detail: string; baseline_week_id?: number }>("/seed/demo", { method: "POST" }),
 };

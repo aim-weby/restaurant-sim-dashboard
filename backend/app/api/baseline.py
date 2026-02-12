@@ -312,3 +312,179 @@ def get_week_health(week_id: int, db: Session = Depends(get_db)):
         "checks": checks,
         "recommendations": recommendations,
     }
+
+
+# ---------- Rule-Based Insights ----------
+
+_RULES: list[dict] = [
+    # --- Finance rules ---
+    {
+        "id": "profit_negative",
+        "category": "finance",
+        "severity": "critical",
+        "condition": lambda k, _h: k.get("finance.profit", 0) < 0,
+        "text": lambda k, _h: (
+            f"Weekly profit is negative ({k['finance.profit']:,.0f} CZK). "
+            "Review cost structure: reduce COGS (food cost), labor spend, "
+            "or increase revenue (traffic, avg spend)."
+        ),
+    },
+    {
+        "id": "margin_low",
+        "category": "finance",
+        "severity": "warning",
+        "condition": lambda k, _h: 0 <= k.get("finance.profit_margin", 0) < 0.10,
+        "text": lambda k, _h: (
+            f"Profit margin is only {k['finance.profit_margin']*100:.1f}% — "
+            "below the 10% benchmark for casual dining. "
+            "Consider price increases or cost reduction."
+        ),
+    },
+    {
+        "id": "margin_healthy",
+        "category": "finance",
+        "severity": "positive",
+        "condition": lambda k, _h: k.get("finance.profit_margin", 0) >= 0.15,
+        "text": lambda k, _h: (
+            f"Profit margin of {k['finance.profit_margin']*100:.1f}% is healthy — "
+            "above the 15% target."
+        ),
+    },
+    {
+        "id": "prime_cost_high",
+        "category": "finance",
+        "severity": "warning",
+        "condition": lambda k, _h: k.get("finance.prime_cost_ratio", 0) > 0.65,
+        "text": lambda k, _h: (
+            f"Prime cost ratio is {k['finance.prime_cost_ratio']*100:.1f}%, "
+            "exceeding the 65% industry guideline. "
+            "Break down COGS vs labor to identify the bigger driver."
+        ),
+    },
+    {
+        "id": "labor_ratio_high",
+        "category": "finance",
+        "severity": "warning",
+        "condition": lambda k, _h: k.get("finance.labor_cost_ratio", 0) > 0.35,
+        "text": lambda k, _h: (
+            f"Labor cost ratio is {k['finance.labor_cost_ratio']*100:.1f}%, "
+            "above the 35% benchmark. Consider optimizing staffing in low-demand dayparts."
+        ),
+    },
+    {
+        "id": "labor_ratio_low",
+        "category": "finance",
+        "severity": "positive",
+        "condition": lambda k, _h: 0 < k.get("finance.labor_cost_ratio", 0) <= 0.25,
+        "text": lambda k, _h: (
+            f"Labor cost ratio of {k['finance.labor_cost_ratio']*100:.1f}% is very efficient. "
+            "Verify that service quality is not affected by understaffing."
+        ),
+    },
+
+    # --- Demand rules ---
+    {
+        "id": "zero_arrivals",
+        "category": "demand",
+        "severity": "critical",
+        "condition": lambda k, _h: k.get("demand.arrivals_groups", 0) == 0,
+        "text": lambda _k, _h: (
+            "Total arrivals are zero — no revenue data. "
+            "Enter arrival counts in the baseline grid."
+        ),
+    },
+    {
+        "id": "low_arrivals",
+        "category": "demand",
+        "severity": "info",
+        "condition": lambda k, _h: 0 < k.get("demand.arrivals_groups", 0) < 50,
+        "text": lambda k, _h: (
+            f"Only {int(k['demand.arrivals_groups'])} groups/week — "
+            "this is quite low. Verify the data or consider marketing."
+        ),
+    },
+
+    # --- Data health rules ---
+    {
+        "id": "coverage_low",
+        "category": "data",
+        "severity": "warning",
+        "condition": lambda _k, h: h is not None and h.get("coverage_score", 100) < 60,
+        "text": lambda _k, h: (
+            f"Data coverage is only {h['coverage_score']}%. "
+            f"Fix: {h['recommendations'][0]}" if h.get("recommendations") else
+            f"Data coverage is only {h['coverage_score']}%. Fill in missing data."
+        ),
+    },
+    {
+        "id": "actionability_low",
+        "category": "data",
+        "severity": "info",
+        "condition": lambda _k, h: h is not None and h.get("actionability_score", 100) < 50,
+        "text": lambda _k, h: (
+            f"Actionability score is {h['actionability_score']}/100 — "
+            "the data may not be detailed enough for reliable simulation."
+        ),
+    },
+
+    # --- Scenario opportunity rules ---
+    {
+        "id": "suggest_staffing_experiment",
+        "category": "scenario",
+        "severity": "info",
+        "condition": lambda k, _h: k.get("finance.labor_cost_ratio", 0) > 0.30,
+        "text": lambda k, _h: (
+            "Consider creating a scenario with reduced staffing in low-traffic "
+            "dayparts (e.g. Mon–Wed) to test labor savings vs service impact."
+        ),
+    },
+    {
+        "id": "suggest_price_experiment",
+        "category": "scenario",
+        "severity": "info",
+        "condition": lambda k, _h: k.get("finance.profit_margin", 0) < 0.12 and k.get("finance.revenue", 0) > 0,
+        "text": lambda _k, _h: (
+            "Margins are tight — try a +5% price change scenario to see "
+            "the revenue/demand trade-off via price elasticity."
+        ),
+    },
+]
+
+
+@router.get("/{week_id}/insights")
+def get_week_insights(week_id: int, db: Session = Depends(get_db)):
+    """Rule-based insights for a baseline week.
+
+    Analyzes KPIs and data health against restaurant industry benchmarks
+    and returns structured insights (no LLM needed).
+    """
+    # 1) compute KPIs (reuse logic)
+    kpi_response = get_week_kpis(week_id, db)
+    kpis = kpi_response["kpis"]
+
+    # 2) compute health (may fail if data is missing)
+    health_data = None
+    try:
+        health_data = get_week_health(week_id, db)
+    except Exception:
+        pass
+
+    # 3) evaluate rules
+    insights = []
+    for rule in _RULES:
+        try:
+            if rule["condition"](kpis, health_data):
+                insights.append({
+                    "id": rule["id"],
+                    "category": rule["category"],
+                    "severity": rule["severity"],
+                    "text": rule["text"](kpis, health_data),
+                })
+        except Exception:
+            continue
+
+    return {
+        "baseline_week_id": week_id,
+        "insights": insights,
+        "rules_evaluated": len(_RULES),
+    }

@@ -65,6 +65,19 @@ export type DataHealthResponse = {
     recommendations: string[];
 };
 
+export type InsightItem = {
+    id: string;
+    category: "finance" | "demand" | "data" | "scenario";
+    severity: "critical" | "warning" | "positive" | "info";
+    text: string;
+};
+
+export type InsightsResponse = {
+    baseline_week_id: number;
+    insights: InsightItem[];
+    rules_evaluated: number;
+};
+
 export type MetricSummary = { mean: number; p10: number; p50: number; p90: number };
 
 export type SimulationResponse = {
@@ -160,4 +173,38 @@ export type SimulationParams = {
     balking_wait_food_limit: number;
     price_elasticity: number;
     demand_noise_pct: number;
+};
+
+export type ExperimentDelta = {
+    baseline: number;
+    scenario: number;
+    delta: number;
+    delta_pct: number;
+};
+
+export type ExperimentResult = {
+    id: string;
+    name: string;
+    description: string;
+    overrides: SimulationOverrides;
+    summary: Record<string, MetricSummary>;
+    deltas: Record<string, ExperimentDelta> | null;
+};
+
+export type ExperimentsResponse = {
+    baseline_week_id: number;
+    week_start: string;
+    runs_per_experiment: number;
+    seed: number;
+    experiment_count: number;
+    experiments: ExperimentResult[];
+};
+
+export type OpeningHoursItem = {
+    id?: number;
+    weekday: number;
+    weekday_label?: string;
+    open_time: string;
+    close_time: string;
+    is_closed: boolean;
 };

@@ -2,37 +2,24 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { BaselineWeek } from "../api/types";
-
-function cardStyle(): React.CSSProperties {
-    return {
-        border: "1px solid #e6e6e6",
-        borderRadius: 16,
-        padding: 14,
-        background: "rgba(255,255,255,0.75)",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-        backdropFilter: "blur(6px)",
-    };
-}
+import PageHeader from "../components/PageHeader";
+import Card from "../components/Card";
+import Button from "../components/Button";
 
 export default function BaselineWeeksPage() {
     const nav = useNavigate();
     const [weeks, setWeeks] = useState<BaselineWeek[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-
     const [weekStart, setWeekStart] = useState("2026-02-03");
     const [label, setLabel] = useState("Test week");
 
     async function load() {
         setError(null);
         setLoading(true);
-        try {
-            setWeeks(await api.listWeeks());
-        } catch (e) {
-            setError(String(e));
-        } finally {
-            setLoading(false);
-        }
+        try { setWeeks(await api.listWeeks()); }
+        catch (e) { setError(String(e)); }
+        finally { setLoading(false); }
     }
 
     async function create() {
@@ -40,114 +27,119 @@ export default function BaselineWeeksPage() {
         try {
             const w = await api.createWeek({ week_start: weekStart, label });
             await load();
-            // UX: po vytvoření jdi rovnou na dashboard
             nav(`/baseline-weeks/${w.id}/dashboard`);
-        } catch (e) {
-            setError(String(e));
-        }
+        } catch (e) { setError(String(e)); }
     }
 
-    useEffect(() => {
-        load();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    async function seedDemo() {
+        try {
+            await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:8000"}/seed/demo`, { method: "POST" });
+            await load();
+        } catch (e) { setError(String(e)); }
+    }
+
+    useEffect(() => { load(); }, []);
 
     return (
-        <div style={{ padding: 24, maxWidth: 980, fontFamily: "system-ui" }}>
-            <div
-                style={{
-                    borderRadius: 18,
-                    padding: 18,
-                    background:
-                        "radial-gradient(1200px 600px at 20% 0%, rgba(0,153,255,0.22), transparent 55%), radial-gradient(900px 500px at 80% 10%, rgba(255,0,122,0.16), transparent 55%)",
-                    border: "1px solid rgba(255,255,255,0.3)",
-                }}
-            >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-                    <div>
-                        <div style={{ fontSize: 12, color: "#666" }}>Baseline</div>
-                        <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: -0.5 }}>Baseline weeks</div>
-                        <div style={{ marginTop: 4, color: "#666" }}>
-                            Create a baseline week, fill the grid, and use dashboard & simulations.
-                        </div>
-                    </div>
+        <div>
+            <PageHeader title="Baseline Weeks" subtitle="Create a baseline week, fill the demand grid, then explore dashboard & simulations.">
+                <Button variant="secondary" size="sm" onClick={seedDemo}>
+                    🌱 Seed Demo
+                </Button>
+            </PageHeader>
 
-                    <button onClick={load} disabled={loading} style={{ padding: "10px 12px", borderRadius: 12 }}>
-                        {loading ? "Reloading…" : "Reload"}
-                    </button>
-                </div>
-            </div>
-
-            {error && <p style={{ color: "crimson", marginTop: 12 }}>{error}</p>}
+            {error && <p className="text-sm text-red-600 mb-4 bg-red-50 rounded-xl px-4 py-2.5 border border-red-100">{error}</p>}
 
             {/* Create new week */}
-            <div style={{ ...cardStyle(), marginTop: 14 }}>
-                <div style={{ fontWeight: 800, fontSize: 16 }}>Create new week</div>
-                <div style={{ color: "#666", fontSize: 12, marginTop: 4 }}>
-                    Tip: week_start should be Monday (but BP MVP doesn’t enforce it).
+            <Card className="p-6 mb-6">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-deep-blue to-indigo-600 flex items-center justify-center text-white text-sm shadow-lg shadow-deep-blue/20">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    </div>
+                    <h3 className="text-sm font-bold text-mariana">Create New Week</h3>
                 </div>
-
-                <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
-                    <label style={{ display: "grid", gap: 6 }}>
-                        Week start (YYYY-MM-DD)
-                        <input value={weekStart} onChange={(e) => setWeekStart(e.target.value)} style={{ padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
-                    </label>
-
-                    <label style={{ display: "grid", gap: 6 }}>
-                        Label
-                        <input value={label} onChange={(e) => setLabel(e.target.value)} style={{ padding: 10, borderRadius: 12, border: "1px solid #ddd" }} />
-                    </label>
-
-                    <button onClick={create} style={{ padding: "10px 14px", borderRadius: 12 }}>
-                        Create
-                    </button>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                    <div>
+                        <label className="block text-xs font-medium text-grey mb-1.5">Week Start</label>
+                        <input type="date" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-grey mb-1.5">Label</label>
+                        <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Week 5 — Valentine's" />
+                    </div>
+                    <Button onClick={create} className="sm:self-end">
+                        Create Week
+                    </Button>
                 </div>
+            </Card>
+
+            {/* Existing weeks list */}
+            <div className="flex items-baseline justify-between mb-4">
+                <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-mariana">Existing Weeks</h3>
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-deep-blue/10 text-deep-blue text-[10px] font-bold">{weeks.length}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+                    {loading ? (
+                        <span className="flex items-center gap-1.5">
+                            <span className="w-3 h-3 border-2 border-deep-blue/30 border-t-deep-blue rounded-full animate-spin" />
+                            Loading…
+                        </span>
+                    ) : "↻ Refresh"}
+                </Button>
             </div>
 
-            {/* Existing weeks */}
-            <div style={{ marginTop: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-                    <h3 style={{ margin: 0 }}>Existing weeks</h3>
-                    <div style={{ color: "#666", fontSize: 12 }}>
-                        {weeks.length} total
-                    </div>
+            {loading ? (
+                <div className="flex items-center justify-center h-32 gap-3">
+                    <div className="w-5 h-5 border-2 border-deep-blue/30 border-t-deep-blue rounded-full animate-spin" />
+                    <span className="text-grey text-sm">Loading weeks…</span>
                 </div>
-
-                {loading ? (
-                    <p style={{ marginTop: 10 }}>Loading…</p>
-                ) : weeks.length === 0 ? (
-                    <p style={{ marginTop: 10 }}>No weeks yet.</p>
-                ) : (
-                    <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
-                        {weeks.map((w) => (
-                            <div key={w.id} style={cardStyle()}>
-                                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+            ) : weeks.length === 0 ? (
+                <Card className="p-10 text-center">
+                    <div className="text-3xl mb-3">📋</div>
+                    <p className="text-grey text-sm mb-1">No weeks yet.</p>
+                    <p className="text-grey text-xs">Create one above or use <strong>"Seed Demo"</strong> to load sample data.</p>
+                </Card>
+            ) : (
+                <div className="space-y-3">
+                    {weeks.map((w, i) => (
+                        <Card key={w.id} className="p-5 group hover:scale-[1.005] transition-transform duration-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-deep-blue/10 to-indigo-100 flex items-center justify-center text-deep-blue font-bold text-sm">
+                                        {i + 1}
+                                    </div>
                                     <div>
-                                        <div style={{ fontWeight: 900, fontSize: 16 }}>{w.label}</div>
-                                        <div style={{ color: "#666", fontSize: 12, marginTop: 2 }}>
-                                            id: {w.id} · week_start: {w.week_start}
+                                        <div className="font-bold text-mariana">{w.label}</div>
+                                        <div className="text-xs text-grey mt-0.5 flex items-center gap-2">
+                                            <span>ID {w.id}</span>
+                                            <span className="w-1 h-1 rounded-full bg-grey/40" />
+                                            <span>Start: {w.week_start}</span>
                                         </div>
                                     </div>
-
-                                    <button
-                                        onClick={() => nav(`/baseline-weeks/${w.id}/dashboard`)}
-                                        style={{ padding: "10px 12px", borderRadius: 12, fontWeight: 700 }}
-                                    >
-                                        Open dashboard →
-                                    </button>
                                 </div>
-
-                                <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                                    <button onClick={() => nav(`/baseline-weeks/${w.id}/grid`)}>Grid</button>
-                                    <button onClick={() => nav(`/baseline-weeks/${w.id}/kpis`)}>KPI</button>
-                                    <button onClick={() => nav(`/baseline-weeks/${w.id}/scenarios`)}>Scenarios</button>
-                                    <button onClick={() => nav(`/simulation?weekId=${w.id}`)}>Simulation</button>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button variant="primary" size="sm" onClick={() => nav(`/baseline-weeks/${w.id}/dashboard`)}>
+                                        📊 Dashboard
+                                    </Button>
+                                    <Button variant="secondary" size="sm" onClick={() => nav(`/baseline-weeks/${w.id}/grid`)}>
+                                        Grid
+                                    </Button>
+                                    <Button variant="secondary" size="sm" onClick={() => nav(`/baseline-weeks/${w.id}/kpis`)}>
+                                        KPIs
+                                    </Button>
+                                    <Button variant="secondary" size="sm" onClick={() => nav(`/baseline-weeks/${w.id}/scenarios`)}>
+                                        Scenarios
+                                    </Button>
+                                    <Button variant="ghost" size="sm" onClick={() => nav(`/baseline-weeks/${w.id}/sim-params`)}>
+                                        ⚙️ Params
+                                    </Button>
                                 </div>
                             </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+                        </Card>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

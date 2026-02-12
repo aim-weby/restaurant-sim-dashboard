@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { BaselineCell, KpisResponse, BaselineWeek, Scenario, SimulationResponse } from "../api/types";
+import type {
+    BaselineCell,
+    KpisResponse,
+    BaselineWeek,
+    Scenario,
+    ScenarioKpisResponse,
+    SimulationResponse,
+    DataHealthResponse,
+} from "../api/types";
 import {
     ResponsiveContainer,
     BarChart,
@@ -14,54 +22,14 @@ import {
     Line,
     Legend,
 } from "recharts";
-
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-function n(v: any, fallback = 0) {
-    const x = Number(v);
-    return Number.isFinite(x) ? x : fallback;
-}
-
-function fmtCurrency(v: number) {
-    return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v);
-}
-function fmtPercent(v: number) {
-    return `${(v * 100).toFixed(1)} %`;
-}
-
-function cardStyle(): React.CSSProperties {
-    return {
-        border: "1px solid #e6e6e6",
-        borderRadius: 16,
-        padding: 14,
-        background: "rgba(255,255,255,0.75)",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-        backdropFilter: "blur(6px)",
-    };
-}
-
-function sectionStyle(): React.CSSProperties {
-    return {
-        border: "1px solid #e6e6e6",
-        borderRadius: 18,
-        padding: 14,
-        background: "rgba(255,255,255,0.70)",
-        boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
-        backdropFilter: "blur(6px)",
-    };
-}
+import { WEEKDAYS, n, fmtCurrency, fmtPercent, fmtValue } from "../utils/format";
+import { cardStyle, sectionStyle } from "../utils/styles";
 
 type CompareMetricSummary = {
     p10: number;
     p50: number;
     p90: number;
 };
-
-function fmtValue(metric: string, v: number) {
-    if (metric.startsWith("finance.") && !metric.endsWith("_ratio") && !metric.endsWith("_margin")) return fmtCurrency(v);
-    if (metric.endsWith("_ratio") || metric.endsWith("_margin")) return fmtPercent(v);
-    return v.toFixed(2);
-}
 
 export default function ReportPage() {
     const nav = useNavigate();
@@ -73,9 +41,11 @@ export default function ReportPage() {
     // baseline week data
     const [kpis, setKpis] = useState<KpisResponse | null>(null);
     const [grid, setGrid] = useState<BaselineCell[]>([]);
+    const [health, setHealth] = useState<DataHealthResponse | null>(null);
 
     // scenarios
     const [scenarios, setScenarios] = useState<Scenario[]>([]);
+    const [detKpis, setDetKpis] = useState<Record<number, ScenarioKpisResponse>>({});
     const [runningScenarioId, setRunningScenarioId] = useState<number | null>(null);
     const [scenarioResults, setScenarioResults] = useState<Record<number, SimulationResponse>>({});
 
@@ -87,8 +57,6 @@ export default function ReportPage() {
     // run settings (shared)
     const [runs, setRuns] = useState(300);
     const [seed, setSeed] = useState<number | "">(42);
-    const [arrivalsSigma, setArrivalsSigma] = useState(0.2);
-    const [spendSigma, setSpendSigma] = useState(0.1);
 
     // initial load weeks
     useEffect(() => {
@@ -112,21 +80,34 @@ export default function ReportPage() {
     useEffect(() => {
         if (selectedWeekId == null) return;
 
-        const weekId = selectedWeekId; // ✅ tady je už jistota: number
+        const weekId = selectedWeekId;
 
         async function loadWeek() {
             setError(null);
             setLoadingWeek(true);
             try {
-                const [k, g, sc] = await Promise.all([
+                const [k, g, sc, h] = await Promise.all([
                     api.getKpis(weekId),
                     api.getBaselineData(weekId),
                     api.listScenarios(weekId),
+                    api.getHealth(weekId).catch(() => null),
                 ]);
                 setKpis(k);
                 setGrid(g);
                 setScenarios(sc);
+                setHealth(h);
                 setScenarioResults({});
+
+                // Fetch deterministic KPIs for each scenario
+                const kpiMap: Record<number, ScenarioKpisResponse> = {};
+                await Promise.all(
+                    sc.map(async (s) => {
+                        try {
+                            kpiMap[s.id] = await api.getScenarioKpis(s.id);
+                        } catch { /* ignore */ }
+                    })
+                );
+                setDetKpis(kpiMap);
             } catch (e) {
                 setError(String(e));
             } finally {
@@ -137,28 +118,34 @@ export default function ReportPage() {
         loadWeek();
     }, [selectedWeekId]);
 
-    // derived: revenue by weekday, groups, avg spend
+    // derived: revenue by weekday — prefer timeseries from enriched KPI, fallback to grid
     const revenueByWeekday = useMemo(() => {
-        const sums = Array.from({ length: 7 }, () => ({ revenue: 0, groups: 0, avgSpend: 0 }));
+        if (kpis?.timeseries?.by_weekday?.length) {
+            return kpis.timeseries.by_weekday.map((row) => ({
+                weekday: WEEKDAYS[n(row["weekday"])] ?? `Day ${row["weekday"]}`,
+                revenue: Math.round(n(row["finance.revenue"])),
+                groups: n(row["demand.arrivals_groups"]),
+                avgSpend: n(row["demand.arrivals_groups"]) > 0
+                    ? Math.round(n(row["finance.revenue"]) / n(row["demand.arrivals_groups"]))
+                    : 0,
+            }));
+        }
 
+        // fallback: compute from grid
+        const sums = Array.from({ length: 7 }, () => ({ revenue: 0, groups: 0 }));
         for (const c of grid) {
             const rev = n(c.arrivals_groups) * n((c as any).avg_spend_per_group);
             sums[c.weekday].revenue += rev;
             sums[c.weekday].groups += n(c.arrivals_groups);
         }
 
-        for (let i = 0; i < 7; i++) {
-            const g = sums[i].groups;
-            sums[i].avgSpend = g > 0 ? sums[i].revenue / g : 0;
-        }
-
         return sums.map((x, i) => ({
             weekday: WEEKDAYS[i],
             revenue: Math.round(x.revenue),
             groups: x.groups,
-            avgSpend: Math.round(x.avgSpend),
+            avgSpend: x.groups > 0 ? Math.round(x.revenue / x.groups) : 0,
         }));
-    }, [grid]);
+    }, [grid, kpis]);
 
     // KPI values
     const kk = kpis?.kpis ?? {};
@@ -197,6 +184,8 @@ export default function ReportPage() {
             baseline_grid: grid,
             scenarios,
             scenario_results: scenarioResults,
+            deterministic_deltas: detKpis,
+            health,
             run_settings: {
                 runs,
                 seed: seed === "" ? null : Number(seed),
@@ -348,7 +337,7 @@ export default function ReportPage() {
                 </div>
             </div>
 
-            {/* Cost breakdown row */}
+            {/* Cost breakdown + data health */}
             <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
                 <div style={cardStyle()}>
                     <div style={{ color: "#666", fontSize: 12 }}>COGS</div>
@@ -362,13 +351,31 @@ export default function ReportPage() {
                     <div style={{ color: "#666", fontSize: 12 }}>Fixed cost</div>
                     <div style={{ fontSize: 20, fontWeight: 900 }}>{fmtCurrency(fixedCost)}</div>
                 </div>
+                {/* Data Health card */}
                 <div style={cardStyle()}>
-                    <div style={{ color: "#666", fontSize: 12 }}>AI insight (MVP placeholder)</div>
-                    <div style={{ marginTop: 8 }}>
-                        <button onClick={() => alert("Explain (MVP mock): later we call /ai/explain with KPI + chart context.")}>
-                            Explain →
-                        </button>
-                    </div>
+                    <div style={{ color: "#666", fontSize: 12 }}>Data health</div>
+                    {health ? (
+                        <div style={{ marginTop: 4 }}>
+                            <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+                                <div style={{ fontSize: 20, fontWeight: 900, color: health.coverage_score >= 80 ? "#16a34a" : "#f59e0b" }}>
+                                    {health.coverage_score}%
+                                </div>
+                                <div style={{ fontSize: 12, color: "#888" }}>
+                                    coverage · {health.checks.filter((c) => c.status === "ok").length}/{health.checks.length} checks
+                                </div>
+                            </div>
+                            <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
+                                Actionability: {health.actionability_score}/100
+                            </div>
+                            {health.recommendations.length > 0 && (
+                                <div style={{ fontSize: 11, color: "#b45309", marginTop: 4 }}>
+                                    💡 {health.recommendations[0]}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>Loading…</div>
+                    )}
                 </div>
             </div>
 
@@ -377,7 +384,9 @@ export default function ReportPage() {
                 <div style={sectionStyle()}>
                     <div>
                         <div style={{ fontWeight: 900, fontSize: 16 }}>Revenue by weekday</div>
-                        <div style={{ color: "#666", fontSize: 12 }}>Derived: arrivals_groups × avg_spend_per_group.</div>
+                        <div style={{ color: "#666", fontSize: 12 }}>
+                            {kpis?.timeseries ? "From enriched KPI timeseries." : "Derived: arrivals_groups × avg_spend_per_group."}
+                        </div>
                     </div>
 
                     <div style={{ height: 280, marginTop: 10 }}>
@@ -388,7 +397,7 @@ export default function ReportPage() {
                                 <YAxis />
                                 <Tooltip formatter={(v: any, name: any) => (name === "revenue" ? fmtCurrency(n(v)) : v)} />
                                 <Legend />
-                                <Bar dataKey="revenue" />
+                                <Bar dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
@@ -408,8 +417,8 @@ export default function ReportPage() {
                                 <YAxis />
                                 <Tooltip />
                                 <Legend />
-                                <Line type="monotone" dataKey="groups" />
-                                <Line type="monotone" dataKey="avgSpend" />
+                                <Line type="monotone" dataKey="groups" stroke="#6366f1" />
+                                <Line type="monotone" dataKey="avgSpend" stroke="#f43f5e" />
                             </LineChart>
                         </ResponsiveContainer>
                     </div>
@@ -422,12 +431,12 @@ export default function ReportPage() {
                     <div>
                         <div style={{ fontWeight: 900, fontSize: 16 }}>Experiments · saved scenarios</div>
                         <div style={{ color: "#666", fontSize: 12 }}>
-                            Run scenarios to populate the compare table (p50 + p10–p90).
+                            Deterministic deltas shown instantly. Run scenarios for stochastic p50 + p10–p90 results.
                         </div>
                     </div>
 
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                             <label style={{ display: "grid", gap: 6, fontSize: 12 }}>
                                 Runs
                                 <input type="number" value={runs} min={10} max={5000} onChange={(e) => setRuns(Number(e.target.value))} />
@@ -439,14 +448,6 @@ export default function ReportPage() {
                                     value={seed}
                                     onChange={(e) => setSeed(e.target.value === "" ? "" : Number(e.target.value))}
                                 />
-                            </label>
-                            <label style={{ display: "grid", gap: 6, fontSize: 12 }}>
-                                Arrivals σ
-                                <input type="number" step="0.05" min={0} max={1} value={arrivalsSigma} onChange={(e) => setArrivalsSigma(Number(e.target.value))} />
-                            </label>
-                            <label style={{ display: "grid", gap: 6, fontSize: 12 }}>
-                                Spend σ
-                                <input type="number" step="0.05" min={0} max={1} value={spendSigma} onChange={(e) => setSpendSigma(Number(e.target.value))} />
                             </label>
                         </div>
 
@@ -483,6 +484,35 @@ export default function ReportPage() {
                                             Done · runs: {scenarioResults[s.id].result.runs}
                                         </div>
                                     )}
+
+                                    {/* Deterministic KPI deltas */}
+                                    {detKpis[s.id] && (() => {
+                                        const d = detKpis[s.id].deltas;
+                                        const deltaItems = [
+                                            { label: "Δ Revenue", key: "finance.revenue", fmt: fmtCurrency, better: "up" as const },
+                                            { label: "Δ Profit", key: "finance.profit", fmt: fmtCurrency, better: "up" as const },
+                                            { label: "Δ Labor", key: "finance.labor_cost", fmt: fmtCurrency, better: "down" as const },
+                                            { label: "Δ Arrivals", key: "demand.arrivals_groups", fmt: (v: number) => (v > 0 ? "+" : "") + v, better: "up" as const },
+                                        ];
+                                        return (
+                                            <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                                                {deltaItems.map((item) => {
+                                                    const val = d[item.key] ?? 0;
+                                                    const good = item.better === "up" ? val > 0 : val < 0;
+                                                    const neutral = Math.abs(val) < 0.01;
+                                                    const color = neutral ? "#888" : good ? "#16a34a" : "#dc2626";
+                                                    return (
+                                                        <div key={item.key} style={{ textAlign: "center", padding: 6, borderRadius: 8, background: "#f8f9fa" }}>
+                                                            <div style={{ fontSize: 11, color: "#666" }}>{item.label}</div>
+                                                            <div style={{ fontSize: 14, fontWeight: 700, color }}>
+                                                                {val > 0 && item.key !== "demand.arrivals_groups" ? "+" : ""}{item.fmt(val)}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })()}
 
                                     <details style={{ marginTop: 10 }}>
                                         <summary>Overrides</summary>

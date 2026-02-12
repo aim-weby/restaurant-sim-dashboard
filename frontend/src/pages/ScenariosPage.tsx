@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { Scenario, ScenarioKpisResponse, SimulationResponse, StaffingChange, SimulationOverrides } from "../api/types";
+import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
@@ -10,6 +11,49 @@ function clamp(v: number, min: number, max: number) { return Math.max(min, Math.
 
 function defaultOverrides(): SimulationOverrides {
     return { staffing_changes: [], price_change: null, capacity_changes: null, opening_hours_changes: [], arrivals_multiplier: 1.0, spend_multiplier: 1.0, food_cost_pct_override: null, fixed_cost_week_override: null };
+}
+
+/* ── Scenario Template Library ── */
+type ScenarioTemplate = { emoji: string; name: string; description: string; overrides: Partial<SimulationOverrides> };
+
+const SCENARIO_TEMPLATES: ScenarioTemplate[] = [
+    {
+        emoji: "🔥", name: "Weekend Rush", description: "+20% arrivals, +10% spend on Fri–Sun",
+        overrides: { arrivals_multiplier: 1.20, spend_multiplier: 1.10 },
+    },
+    {
+        emoji: "👷", name: "Staff Shortage", description: "−1 kitchen & −1 service on all shifts",
+        overrides: {
+            staffing_changes: [
+                ...Array.from({ length: 7 }, (_, d) => [{ weekday: d, daypart_id: 1, role: "kitchen", delta_staff: -1 }, { weekday: d, daypart_id: 1, role: "service", delta_staff: -1 }]).flat(),
+            ] as StaffingChange[],
+        },
+    },
+    {
+        emoji: "💸", name: "Price Increase +15%", description: "Raise avg spend by 15%, test elasticity",
+        overrides: { spend_multiplier: 1.15 },
+    },
+    {
+        emoji: "📉", name: "Economy Mode", description: "Cut fixed costs 20%, reduce food cost 5pp",
+        overrides: { food_cost_pct_override: 0.25 },
+    },
+    {
+        emoji: "🎄", name: "Holiday Season", description: "+30% arrivals, +20% spend across the board",
+        overrides: { arrivals_multiplier: 1.30, spend_multiplier: 1.20 },
+    },
+    {
+        emoji: "🌙", name: "Late Night Extended", description: "+15% arrivals, simulate longer hours effect",
+        overrides: { arrivals_multiplier: 1.15 },
+    },
+];
+
+function mergeOverrides(base: SimulationOverrides, partial: Partial<SimulationOverrides>): SimulationOverrides {
+    return {
+        ...base,
+        ...partial,
+        staffing_changes: partial.staffing_changes ?? base.staffing_changes,
+        opening_hours_changes: partial.opening_hours_changes ?? base.opening_hours_changes,
+    };
 }
 
 function fmtCurrency(v: number) { return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v); }
@@ -25,6 +69,7 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export default function ScenariosPage() {
     const { weekId } = useParams();
     const week = Number(weekId);
+    const toast = useToast();
 
     const [items, setItems] = useState<Scenario[]>([]);
     const [results, setResults] = useState<Record<number, SimulationResponse>>({});
@@ -90,8 +135,16 @@ export default function ScenariosPage() {
             let params: any = overrides;
             if (advancedOpen) { try { params = JSON.parse(overridesJson); } catch { throw new Error("Invalid JSON in Advanced overrides."); } }
             await api.createScenario(week, { name: name.trim() || "Scenario", params });
+            toast.success(`Scenario "${name}" created!`);
             await load(); resetForm();
         } catch (e) { setError(String(e)); }
+    }
+
+    function applyTemplate(tpl: ScenarioTemplate) {
+        setName(tpl.name);
+        setOverrides(mergeOverrides(defaultOverrides(), tpl.overrides));
+        setAdvancedOpen(false);
+        toast.info(`Template "${tpl.name}" applied — customize and create!`);
     }
 
     async function runScenario(scenarioId: number) {
@@ -137,6 +190,30 @@ export default function ScenariosPage() {
                 <div className="mt-3 flex gap-2 items-center">
                     <Button variant="ghost" size="sm" onClick={() => setResults({})} disabled={Object.keys(results).length === 0}>Clear results</Button>
                     <span className="text-[10px] text-grey">Clears in-memory compare results (does not delete scenarios).</span>
+                </div>
+            </Card>
+
+            {/* Scenario Templates */}
+            <Card className="p-5 mb-5">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-white text-sm shadow-lg">📋</div>
+                    <div>
+                        <h3 className="text-sm font-bold text-mariana">Quick Templates</h3>
+                        <p className="text-[10px] text-grey">Click a template to pre-fill the scenario form below.</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {SCENARIO_TEMPLATES.map((tpl) => (
+                        <button
+                            key={tpl.name}
+                            onClick={() => applyTemplate(tpl)}
+                            className="text-left p-3 rounded-xl border border-mist-dark/20 bg-mist/10 hover:bg-deep-blue/5 hover:border-deep-blue/30 hover:scale-[1.02] transition-all duration-200 cursor-pointer"
+                        >
+                            <div className="text-lg mb-1">{tpl.emoji}</div>
+                            <div className="text-xs font-bold text-mariana">{tpl.name}</div>
+                            <div className="text-[10px] text-grey mt-0.5 leading-snug">{tpl.description}</div>
+                        </button>
+                    ))}
                 </div>
             </Card>
 

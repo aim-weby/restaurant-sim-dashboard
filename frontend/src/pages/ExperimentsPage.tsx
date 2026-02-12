@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { ExperimentResult, ExperimentsResponse } from "../api/types";
+import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
@@ -22,6 +23,7 @@ const EXP_ICONS: Record<string, string> = {
 };
 
 export default function ExperimentsPage() {
+    const toast = useToast();
     const [searchParams] = useSearchParams();
     const weekId = Number(searchParams.get("weekId") || 1);
 
@@ -40,7 +42,7 @@ export default function ExperimentsPage() {
             setData(res);
             setElapsed(Math.round((Date.now() - t0) / 1000));
         } catch (e) {
-            alert(`Error: ${e}`);
+            toast.error(`Experiment failed: ${e}`);
         } finally {
             setLoading(false);
         }
@@ -218,6 +220,73 @@ export default function ExperimentsPage() {
                                 </tbody>
                             </table>
                         </div>
+                    </Card>
+
+                    {/* Sensitivity / Tornado chart */}
+                    <Card className="p-5 mt-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-purple-500 to-fuchsia-600 flex items-center justify-center text-white text-sm shadow-lg">🌪️</div>
+                            <div>
+                                <h3 className="text-sm font-bold text-mariana">Sensitivity Tornado — Profit Impact</h3>
+                                <p className="text-[10px] text-grey">Scenarios ranked by absolute profit change vs baseline</p>
+                            </div>
+                        </div>
+                        {(() => {
+                            const baseline = data.experiments.find((e) => e.id === "baseline");
+                            if (!baseline) return <p className="text-sm text-grey">No baseline found.</p>;
+                            const baselineProfit = baseline.summary["profit"]?.mean ?? 0;
+                            const impacts = data.experiments
+                                .filter((e) => e.id !== "baseline" && e.deltas?.["profit"])
+                                .map((e) => ({
+                                    name: e.name,
+                                    icon: EXP_ICONS[e.id] ?? "🧪",
+                                    delta: e.deltas!["profit"].delta,
+                                    pct: e.deltas!["profit"].delta_pct,
+                                }))
+                                .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+                            const maxDelta = Math.max(...impacts.map((i) => Math.abs(i.delta)), 1);
+
+                            return (
+                                <div className="space-y-2.5">
+                                    {impacts.map((imp) => {
+                                        const barWidth = (Math.abs(imp.delta) / maxDelta) * 100;
+                                        const isPositive = imp.delta >= 0;
+                                        return (
+                                            <div key={imp.name} className="flex items-center gap-3">
+                                                <div className="w-36 text-xs text-right text-mariana font-medium truncate flex items-center justify-end gap-1.5">
+                                                    <span>{imp.icon}</span>
+                                                    <span>{imp.name}</span>
+                                                </div>
+                                                <div className="flex-1 relative h-6">
+                                                    <div className="absolute inset-0 flex items-center">
+                                                        <div className="w-full h-px bg-mist-dark/30" />
+                                                    </div>
+                                                    <div
+                                                        className={`absolute top-1 h-4 rounded-md transition-all duration-500 ${isPositive
+                                                            ? "bg-gradient-to-r from-emerald-400 to-green-500 left-1/2"
+                                                            : "bg-gradient-to-l from-red-400 to-rose-500 right-1/2"
+                                                            }`}
+                                                        style={{ width: `${barWidth / 2}%` }}
+                                                    />
+                                                </div>
+                                                <div className={`w-28 text-xs font-bold text-right ${isPositive ? "text-emerald-600" : "text-red-600"}`}>
+                                                    {isPositive ? "+" : ""}{imp.delta.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK
+                                                    <span className="text-[10px] font-normal text-grey ml-1">({isPositive ? "+" : ""}{imp.pct.toFixed(1)}%)</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                    <div className="flex items-center gap-3 pt-2 border-t border-mist-dark/20">
+                                        <div className="w-36 text-[10px] text-right text-grey">Baseline Profit</div>
+                                        <div className="flex-1" />
+                                        <div className="w-28 text-xs font-bold text-right text-mariana">
+                                            {baselineProfit.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </Card>
                 </>
             )}

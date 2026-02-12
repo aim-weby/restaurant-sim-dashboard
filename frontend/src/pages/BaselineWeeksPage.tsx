@@ -2,15 +2,54 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { BaselineWeek } from "../api/types";
+import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
 
+/* Pre-built Czech restaurant template (typical Prague bistro, 7 weekdays × 3 dayparts) */
+const CZECH_TEMPLATE = {
+    label: "Czech Restaurant — Typical Week",
+    // daypart_id 1=Lunch, 2=Afternoon, 3=Dinner (standard seed layout)
+    cells: [
+        // Monday
+        { weekday: 0, daypart_id: 1, arrivals_groups: 18, avg_spend_per_group: 420, avg_party_size: 2.2 },
+        { weekday: 0, daypart_id: 2, arrivals_groups: 6, avg_spend_per_group: 280, avg_party_size: 1.8 },
+        { weekday: 0, daypart_id: 3, arrivals_groups: 14, avg_spend_per_group: 520, avg_party_size: 2.5 },
+        // Tuesday
+        { weekday: 1, daypart_id: 1, arrivals_groups: 20, avg_spend_per_group: 420, avg_party_size: 2.2 },
+        { weekday: 1, daypart_id: 2, arrivals_groups: 7, avg_spend_per_group: 290, avg_party_size: 1.9 },
+        { weekday: 1, daypart_id: 3, arrivals_groups: 15, avg_spend_per_group: 530, avg_party_size: 2.4 },
+        // Wednesday
+        { weekday: 2, daypart_id: 1, arrivals_groups: 22, avg_spend_per_group: 430, avg_party_size: 2.3 },
+        { weekday: 2, daypart_id: 2, arrivals_groups: 8, avg_spend_per_group: 300, avg_party_size: 2.0 },
+        { weekday: 2, daypart_id: 3, arrivals_groups: 16, avg_spend_per_group: 540, avg_party_size: 2.5 },
+        // Thursday
+        { weekday: 3, daypart_id: 1, arrivals_groups: 22, avg_spend_per_group: 430, avg_party_size: 2.3 },
+        { weekday: 3, daypart_id: 2, arrivals_groups: 9, avg_spend_per_group: 310, avg_party_size: 2.0 },
+        { weekday: 3, daypart_id: 3, arrivals_groups: 18, avg_spend_per_group: 560, avg_party_size: 2.6 },
+        // Friday
+        { weekday: 4, daypart_id: 1, arrivals_groups: 24, avg_spend_per_group: 450, avg_party_size: 2.4 },
+        { weekday: 4, daypart_id: 2, arrivals_groups: 10, avg_spend_per_group: 320, avg_party_size: 2.1 },
+        { weekday: 4, daypart_id: 3, arrivals_groups: 25, avg_spend_per_group: 620, avg_party_size: 2.8 },
+        // Saturday
+        { weekday: 5, daypart_id: 1, arrivals_groups: 26, avg_spend_per_group: 480, avg_party_size: 2.6 },
+        { weekday: 5, daypart_id: 2, arrivals_groups: 12, avg_spend_per_group: 350, avg_party_size: 2.2 },
+        { weekday: 5, daypart_id: 3, arrivals_groups: 28, avg_spend_per_group: 650, avg_party_size: 3.0 },
+        // Sunday
+        { weekday: 6, daypart_id: 1, arrivals_groups: 20, avg_spend_per_group: 460, avg_party_size: 2.5 },
+        { weekday: 6, daypart_id: 2, arrivals_groups: 8, avg_spend_per_group: 300, avg_party_size: 2.0 },
+        { weekday: 6, daypart_id: 3, arrivals_groups: 12, avg_spend_per_group: 500, avg_party_size: 2.4 },
+    ],
+};
+
 export default function BaselineWeeksPage() {
     const nav = useNavigate();
+    const toast = useToast();
     const [weeks, setWeeks] = useState<BaselineWeek[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+    const [cloning, setCloning] = useState<number | null>(null);
     const [weekStart, setWeekStart] = useState("2026-02-03");
     const [label, setLabel] = useState("Test week");
 
@@ -26,14 +65,65 @@ export default function BaselineWeeksPage() {
         setError(null);
         try {
             const w = await api.createWeek({ week_start: weekStart, label });
+            toast.success(`Week "${w.label}" created!`);
             await load();
             nav(`/baseline-weeks/${w.id}/dashboard`);
         } catch (e) { setError(String(e)); }
     }
 
+    async function cloneWeek(sourceWeek: BaselineWeek) {
+        setCloning(sourceWeek.id);
+        try {
+            // 1. Create a new week
+            const newWeek = await api.createWeek({
+                week_start: sourceWeek.week_start,
+                label: `${sourceWeek.label} (copy)`,
+            });
+            // 2. Copy the grid data from source
+            const data = await api.getBaselineData(sourceWeek.id);
+            if (data.length > 0) {
+                const cells = data.map((c) => ({
+                    weekday: c.weekday,
+                    daypart_id: c.daypart_id,
+                    arrivals_groups: c.arrivals_groups,
+                    avg_spend_per_group: c.avg_spend_per_group,
+                    avg_party_size: c.avg_party_size,
+                }));
+                await api.putBaselineData(newWeek.id, cells);
+            }
+            toast.success(`Cloned "${sourceWeek.label}" → "${newWeek.label}"`);
+            await load();
+            nav(`/baseline-weeks/${newWeek.id}/dashboard`);
+        } catch (e) {
+            toast.error(`Clone failed: ${e}`);
+        } finally {
+            setCloning(null);
+        }
+    }
+
+    async function createFromTemplate() {
+        setError(null);
+        try {
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            const monday = new Date(today);
+            monday.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
+            const weekStartStr = monday.toISOString().split("T")[0];
+
+            const w = await api.createWeek({ week_start: weekStartStr, label: CZECH_TEMPLATE.label });
+            await api.putBaselineData(w.id, CZECH_TEMPLATE.cells);
+            toast.success("🇨🇿 Czech restaurant template created with realistic demand data!");
+            await load();
+            nav(`/baseline-weeks/${w.id}/dashboard`);
+        } catch (e) {
+            toast.error(`Template failed: ${e}`);
+        }
+    }
+
     async function seedDemo() {
         try {
             await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:8000"}/seed/demo`, { method: "POST" });
+            toast.success("Demo data seeded!");
             await load();
         } catch (e) { setError(String(e)); }
     }
@@ -43,6 +133,9 @@ export default function BaselineWeeksPage() {
     return (
         <div>
             <PageHeader title="Baseline Weeks" subtitle="Create a baseline week, fill the demand grid, then explore dashboard & simulations.">
+                <Button variant="secondary" size="sm" onClick={createFromTemplate}>
+                    🇨🇿 Czech Template
+                </Button>
                 <Button variant="secondary" size="sm" onClick={seedDemo}>
                     🌱 Seed Demo
                 </Button>
@@ -98,7 +191,7 @@ export default function BaselineWeeksPage() {
                 <Card className="p-10 text-center">
                     <div className="text-3xl mb-3">📋</div>
                     <p className="text-grey text-sm mb-1">No weeks yet.</p>
-                    <p className="text-grey text-xs">Create one above or use <strong>"Seed Demo"</strong> to load sample data.</p>
+                    <p className="text-grey text-xs">Create one above, use <strong>"Seed Demo"</strong>, or try the <strong>"🇨🇿 Czech Template"</strong>.</p>
                 </Card>
             ) : (
                 <div className="space-y-3">
@@ -133,6 +226,19 @@ export default function BaselineWeeksPage() {
                                     </Button>
                                     <Button variant="ghost" size="sm" onClick={() => nav(`/baseline-weeks/${w.id}/sim-params`)}>
                                         ⚙️ Params
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => cloneWeek(w)}
+                                        disabled={cloning === w.id}
+                                    >
+                                        {cloning === w.id ? (
+                                            <span className="flex items-center gap-1">
+                                                <span className="w-3 h-3 border-2 border-grey/30 border-t-mariana rounded-full animate-spin" />
+                                                Cloning…
+                                            </span>
+                                        ) : "📋 Clone"}
                                     </Button>
                                 </div>
                             </div>

@@ -23,6 +23,7 @@ pytest==9.0.2
 python-dotenv==1.2.1
 PyYAML==6.0.3
 SQLAlchemy==2.0.46
+simpy==4.1.1
 starlette==0.50.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0

@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { SimulationResponse } from "../api/types";
 
-type MetricSummary = { mean: number; p10: number; p50: number; p90: number };
+type MetricSummary = { mean: number; p10: number; p50: number; p90: number; median: number };
 
 type Scenario = {
     key: string;
@@ -14,13 +14,14 @@ type Scenario = {
 function fmtCurrency(v: number) {
     return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v);
 }
-function fmtPercent(v: number) {
-    return `${(v * 100).toFixed(1)} %`;
+function fmtNum(v: number) {
+    return v.toFixed(1);
 }
 function fmtValue(metric: string, v: number) {
-    if (metric.startsWith("finance.") && !metric.endsWith("_ratio") && !metric.endsWith("_margin")) return fmtCurrency(v);
-    if (metric.endsWith("_ratio") || metric.endsWith("_margin")) return fmtPercent(v);
-    return v.toFixed(2);
+    if (metric.startsWith("finance.")) return fmtCurrency(v);
+    if (metric.startsWith("util.")) return `${(v * 100).toFixed(1)} %`;
+    if (metric.startsWith("queue.") || metric.startsWith("time.")) return `${fmtNum(v)} min`;
+    return fmtNum(v);
 }
 
 function metric(result: SimulationResponse | null, key: string): MetricSummary | null {
@@ -32,10 +33,8 @@ export default function SimulationPage() {
     const [sp] = useSearchParams();
     const baselineWeekId = sp.get("weekId") ? Number(sp.get("weekId")) : null;
 
-    const [runs, setRuns] = useState(300);
+    const [runs, setRuns] = useState(200);
     const [seed, setSeed] = useState<number | "">(42);
-    const [arrivalsSigma, setArrivalsSigma] = useState(0.2);
-    const [spendSigma, setSpendSigma] = useState(0.1);
 
     const [error, setError] = useState<string | null>(null);
     const [runningKey, setRunningKey] = useState<string | null>(null);
@@ -47,33 +46,48 @@ export default function SimulationPage() {
                 key: "baseline",
                 name: "Baseline",
                 overrides: {
+                    staffing_changes: [],
+                    price_change: null,
+                    capacity_changes: null,
+                    opening_hours_changes: [],
                     arrivals_multiplier: 1.0,
                     spend_multiplier: 1.0,
-                    food_cost_pct_override: null,
-                    fixed_cost_week_override: null,
-                    staffing_delta: [],
                 },
             },
             {
                 key: "sat_dinner_plus1_kitchen",
                 name: "+1 kitchen on Sat Dinner",
                 overrides: {
+                    staffing_changes: [{ weekday: 5, daypart_id: 2, role: "kitchen", delta_staff: 1 }],
+                    price_change: null,
+                    capacity_changes: null,
+                    opening_hours_changes: [],
                     arrivals_multiplier: 1.0,
                     spend_multiplier: 1.0,
-                    food_cost_pct_override: null,
-                    fixed_cost_week_override: null,
-                    staffing_delta: [{ weekday: 5, daypart_id: 2, role: "kitchen", staff_count_delta: 1 }],
                 },
             },
             {
-                key: "price_plus5_demand_minus3",
-                name: "Price +5%, Demand −3%",
+                key: "price_plus8",
+                name: "Price +8% (elasticity)",
                 overrides: {
-                    arrivals_multiplier: 0.97,
+                    staffing_changes: [],
+                    price_change: { type: "percent", value: 0.08 },
+                    capacity_changes: null,
+                    opening_hours_changes: [],
+                    arrivals_multiplier: 1.0,
                     spend_multiplier: 1.05,
-                    food_cost_pct_override: null,
-                    fixed_cost_week_override: null,
-                    staffing_delta: [],
+                },
+            },
+            {
+                key: "add_tables",
+                name: "+4 seats capacity",
+                overrides: {
+                    staffing_changes: [],
+                    price_change: null,
+                    capacity_changes: { tables_count: 1, seats_total: 4 },
+                    opening_hours_changes: [],
+                    arrivals_multiplier: 1.0,
+                    spend_multiplier: 1.0,
                 },
             },
         ];
@@ -93,8 +107,6 @@ export default function SimulationPage() {
                 baseline_week_id: baselineWeekId,
                 runs,
                 seed: seed === "" ? null : Number(seed),
-                arrivals_sigma: arrivalsSigma,
-                spend_sigma: spendSigma,
                 overrides: s.overrides,
             });
 
@@ -110,7 +122,10 @@ export default function SimulationPage() {
         setResults({});
     }
 
-    const compareKeys = ["finance.profit", "finance.revenue", "demand.lost_groups"];
+    const compareKeys = [
+        "finance.revenue", "finance.profit", "demand.served_groups", "demand.lost_groups",
+        "queue.wait_table", "queue.wait_food", "util.kitchen", "util.tables",
+    ];
 
     return (
         <div style={{ fontFamily: "system-ui", padding: 24, maxWidth: 1200 }}>
@@ -121,13 +136,14 @@ export default function SimulationPage() {
                         <Link to={`/baseline-weeks/${baselineWeekId}/grid`}>Grid</Link>
                         <Link to={`/baseline-weeks/${baselineWeekId}/kpis`}>KPI</Link>
                         <Link to={`/baseline-weeks/${baselineWeekId}/scenarios`}>Scenarios</Link>
+                        <Link to={`/baseline-weeks/${baselineWeekId}/sim-params`}>Sim Params</Link>
                     </>
                 )}
             </div>
 
             <h1>Simulation – Scenario compare</h1>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginTop: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 12, maxWidth: 400 }}>
                 <label style={{ display: "grid", gap: 6 }}>
                     Runs
                     <input type="number" value={runs} onChange={(e) => setRuns(Number(e.target.value))} min={10} max={5000} />
@@ -142,54 +158,30 @@ export default function SimulationPage() {
                         placeholder="e.g. 42"
                     />
                 </label>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                    Arrivals sigma (0–1)
-                    <input
-                        type="number"
-                        step="0.05"
-                        value={arrivalsSigma}
-                        onChange={(e) => setArrivalsSigma(Number(e.target.value))}
-                        min={0}
-                        max={1}
-                    />
-                </label>
-
-                <label style={{ display: "grid", gap: 6 }}>
-                    Spend sigma (0–1)
-                    <input
-                        type="number"
-                        step="0.05"
-                        value={spendSigma}
-                        onChange={(e) => setSpendSigma(Number(e.target.value))}
-                        min={0}
-                        max={1}
-                    />
-                </label>
             </div>
 
             <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "center" }}>
                 <div style={{ color: "#666", fontSize: 12 }}>
-                    Baseline week selected: <b>{baselineWeekId ?? "none"}</b>
+                    Baseline week: <b>{baselineWeekId ?? "none"}</b>
                 </div>
                 <button onClick={clearResults}>Clear results</button>
             </div>
 
             {error && <p style={{ color: "crimson" }}>{error}</p>}
 
-            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
                 {scenarios.map((s) => (
                     <div key={s.key} style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
-                        <div style={{ fontWeight: 700 }}>{s.name}</div>
-                        <div style={{ color: "#666", fontSize: 12, marginTop: 6 }}>{s.key}</div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{s.name}</div>
+                        <div style={{ color: "#666", fontSize: 11, marginTop: 4 }}>{s.key}</div>
 
                         <button style={{ marginTop: 10 }} onClick={() => runScenario(s)} disabled={runningKey !== null}>
                             {runningKey === s.key ? "Running…" : "Run"}
                         </button>
 
                         {results[s.key] && (
-                            <div style={{ marginTop: 10, fontSize: 12, color: "#555" }}>
-                                Done · runs: {results[s.key].result.runs}
+                            <div style={{ marginTop: 8, fontSize: 11, color: "#555" }}>
+                                ✓ runs: {results[s.key].result.runs}
                             </div>
                         )}
                     </div>
@@ -202,33 +194,33 @@ export default function SimulationPage() {
                 <div style={{ overflowX: "auto" }}>
                     <table width="100%" cellPadding={8} style={{ borderCollapse: "collapse", minWidth: 900 }}>
                         <thead>
-                        <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
-                            <th>Metric</th>
-                            {scenarios.map((s) => (
-                                <th key={s.key}>{s.name}</th>
-                            ))}
-                        </tr>
+                            <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+                                <th>Metric</th>
+                                {scenarios.map((s) => (
+                                    <th key={s.key}>{s.name}</th>
+                                ))}
+                            </tr>
                         </thead>
                         <tbody>
-                        {compareKeys.map((m) => (
-                            <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                                <td>
-                                    <code>{m}</code>
-                                </td>
-                                {scenarios.map((s) => {
-                                    const r = metric(results[s.key] ?? null, m);
-                                    if (!r) return <td key={s.key} style={{ color: "#999" }}>—</td>;
-                                    return (
-                                        <td key={s.key}>
-                                            <div><b>{fmtValue(m, r.p50)}</b></div>
-                                            <div style={{ color: "#666", fontSize: 12 }}>
-                                                p10–p90: {fmtValue(m, r.p10)} → {fmtValue(m, r.p90)}
-                                            </div>
-                                        </td>
-                                    );
-                                })}
-                            </tr>
-                        ))}
+                            {compareKeys.map((m) => (
+                                <tr key={m} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                                    <td>
+                                        <code>{m}</code>
+                                    </td>
+                                    {scenarios.map((s) => {
+                                        const r = metric(results[s.key] ?? null, m);
+                                        if (!r) return <td key={s.key} style={{ color: "#999" }}>—</td>;
+                                        return (
+                                            <td key={s.key}>
+                                                <div><b>{fmtValue(m, r.mean)}</b></div>
+                                                <div style={{ color: "#666", fontSize: 12 }}>
+                                                    p10–p90: {fmtValue(m, r.p10)} → {fmtValue(m, r.p90)}
+                                                </div>
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
@@ -236,8 +228,8 @@ export default function SimulationPage() {
                 <details style={{ marginTop: 12 }}>
                     <summary>Raw JSON (latest runs)</summary>
                     <pre style={{ background: "#fafafa", padding: 12, borderRadius: 10, overflowX: "auto" }}>
-            {JSON.stringify(results, null, 2)}
-          </pre>
+                        {JSON.stringify(results, null, 2)}
+                    </pre>
                 </details>
             </div>
         </div>

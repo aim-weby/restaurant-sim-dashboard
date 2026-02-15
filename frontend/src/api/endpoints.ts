@@ -95,4 +95,16 @@ export const api = {
 
     // --- seed ---
     seedDemo: () => fetchJson<{ status: string; detail: string; baseline_week_id?: number }>("/seed/demo", { method: "POST" }),
+
+    // --- AI ---
+    getAiInsights: (weekId: number) =>
+        fetchJson<import("./types").AiInsightsResponse>("/ai/insights", {
+            method: "POST",
+            body: JSON.stringify({ baseline_week_id: weekId }),
+        }),
+    askAdvisor: (messages: import("./types").AiChatMessage[], weekId?: number) =>
+        fetchJson<import("./types").AiAdvisorResponse>("/ai/advisor", {
+            method: "POST",
+            body: JSON.stringify({ messages, baseline_week_id: weekId ?? null }),
+        }),
 };

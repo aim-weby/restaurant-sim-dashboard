@@ -21,6 +21,7 @@ import {
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
+import AiInsightsCard from "../components/AiInsightsCard";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const CHART_BLUE = "#0000FF";
@@ -522,6 +523,11 @@ export default function DashboardPage() {
                         <Link to={`/baseline-weeks/${week}/scenarios`} className="text-deep-blue hover:underline">Try scenarios →</Link>
                     </div>
                 </Card>
+            </div>
+
+            {/* Row 5a: AI Insights */}
+            <div className="mb-6">
+                <AiInsightsCard weekId={week} />
             </div>
 
             {/* Row 5: Scenario Delta */}

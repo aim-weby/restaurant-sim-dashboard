@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -13,6 +16,7 @@ from app.api.sim_params import router as sim_params_router
 from app.api.experiments import router as experiments_router
 from app.api.opening_hours import router as opening_hours_router
 from app.api.seed import router as seed_router
+from app.api.ai import router as ai_router
 from app.db.init_db import init_db
 
 app = FastAPI(title="Restaurant Simulation Dashboard API", version="0.1.0")
@@ -46,3 +50,4 @@ app.include_router(sim_params_router)
 app.include_router(experiments_router)
 app.include_router(opening_hours_router)
 app.include_router(seed_router)
+app.include_router(ai_router)

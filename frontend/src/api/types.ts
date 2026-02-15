@@ -208,3 +208,28 @@ export type OpeningHoursItem = {
     close_time: string;
     is_closed: boolean;
 };
+
+// ---- AI types ----
+export type AiInsight = {
+    category: string;
+    severity: string;
+    title: string;
+    text: string;
+    recommendation: string;
+};
+
+export type AiInsightsResponse = {
+    insights: AiInsight[];
+    model: string;
+    tokens_used: number;
+};
+
+export type AiChatMessage = {
+    role: "user" | "assistant";
+    content: string;
+};
+
+export type AiAdvisorResponse = {
+    reply: string;
+    tokens_used: number;
+};

@@ -238,10 +238,12 @@ def simulate_week(
             yield env.timeout(slot.start_minutes - env.now)
 
         # Fill tokens for this daypart
-        if slot.kitchen_staff > 0:
-            yield kitchen.put(min(slot.kitchen_staff, kitchen.capacity - kitchen.level))
-        if slot.service_staff > 0:
-            yield service.put(min(slot.service_staff, service.capacity - service.level))
+        k_amount = min(slot.kitchen_staff, kitchen.capacity - kitchen.level)
+        if k_amount > 0:
+            yield kitchen.put(k_amount)
+        s_amount = min(slot.service_staff, service.capacity - service.level)
+        if s_amount > 0:
+            yield service.put(s_amount)
 
         # Compute effective arrivals
         arrivals_eff = _effective_arrivals(slot.arrivals_groups)

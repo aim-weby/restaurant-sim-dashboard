@@ -4,6 +4,7 @@ import { useKeyboardShortcuts, KeyboardShortcutHelp } from "../hooks/useKeyboard
 import type { Shortcut } from "../hooks/useKeyboardShortcuts";
 import { useTheme } from "../components/ThemeProvider";
 import Breadcrumbs from "../components/Breadcrumbs";
+import AiAdvisorChat from "../components/AiAdvisorChat";
 
 /* ── Sidebar icons (inline SVG paths) ── */
 const icons: Record<string, string> = {
@@ -189,6 +190,9 @@ export default function Layout() {
                     </div>
                 </main>
             </div>
+
+            {/* AI Advisor Chat */}
+            <AiAdvisorChat />
 
             {/* Keyboard shortcut help dialog */}
             <KeyboardShortcutHelp shortcuts={shortcuts} open={helpOpen} onClose={() => setHelpOpen(false)} />

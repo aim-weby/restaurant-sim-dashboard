@@ -11,6 +11,7 @@
 # --- Web framework & server ---
 fastapi==0.128.1
 uvicorn==0.40.0
+gunicorn==23.0.0
 
 # --- Database ORM ---
 SQLAlchemy==2.0.46

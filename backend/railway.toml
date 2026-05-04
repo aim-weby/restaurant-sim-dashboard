@@ -1,11 +1,11 @@
 # Railway configuration for the FastAPI backend service
-# Root directory: /backend
+# Root directory must be set to /backend in Railway dashboard → Settings → Root Directory
 
 [build]
 builder = "nixpacks"
 
 [deploy]
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+startCommand = "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"

@@ -6,6 +6,9 @@ import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { fmtCurrency, fmtValue, WEEKDAYS } from "../utils/format";
+import { useSimDefaults } from "../hooks/useSimDefaults";
 
 function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
 
@@ -56,15 +59,7 @@ function mergeOverrides(base: SimulationOverrides, partial: Partial<SimulationOv
     };
 }
 
-function fmtCurrency(v: number) { return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v); }
-function fmtPercent(v: number) { return `${(v * 100).toFixed(1)} %`; }
-function fmtValue(metric: string, v: number) {
-    if (metric.startsWith("finance.") && !metric.endsWith("_ratio") && !metric.endsWith("_margin")) return fmtCurrency(v);
-    if (metric.endsWith("_ratio") || metric.endsWith("_margin")) return fmtPercent(v);
-    return v.toFixed(2);
-}
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export default function ScenariosPage() {
     const { weekId } = useParams();
@@ -89,9 +84,10 @@ export default function ScenariosPage() {
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [overridesJson, setOverridesJson] = useState(JSON.stringify(defaultOverrides(), null, 2));
 
-    const [runs, setRuns] = useState(200);
-    const [seed, setSeed] = useState<number | "">(42);
+    const { runs, setRuns, seed, setSeed } = useSimDefaults();
     const [error, setError] = useState<string | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<Scenario | null>(null);
+    const [initialLoading, setInitialLoading] = useState(true);
 
     async function load() {
         setError(null);
@@ -103,6 +99,7 @@ export default function ScenariosPage() {
             setDetKpis(kpiMap);
             if (dp.length > 0 && deltaDaypartId === null) setDeltaDaypartId(dp[0].id);
         } catch (e) { setError(String(e)); }
+        finally { setInitialLoading(false); }
     }
 
     async function runAll() {
@@ -152,6 +149,18 @@ export default function ScenariosPage() {
         try { const res = await api.runScenario(scenarioId, { runs, seed: seed === "" ? null : Number(seed) }); setResults((prev) => ({ ...prev, [scenarioId]: res })); }
         catch (e) { setError(String(e)); }
         finally { setRunning(null); }
+    }
+
+    async function deleteScenario(scenario: Scenario) {
+        try {
+            await api.deleteScenario(scenario.id);
+            toast.success(`Scenario "${scenario.name}" deleted.`);
+            setDeleteTarget(null);
+            await load();
+        } catch (e) {
+            toast.error(`Delete failed: ${e}`);
+            setDeleteTarget(null);
+        }
     }
 
     const compareMetrics = useMemo(() => ["finance.revenue", "finance.profit", "demand.served_groups", "demand.lost_groups", "queue.wait_table", "queue.wait_food", "util.kitchen", "util.tables"], []);
@@ -332,7 +341,17 @@ export default function ScenariosPage() {
                     </div>
                 </div>
 
-                {items.length === 0 ? (
+                {initialLoading ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {[1, 2].map((i) => (
+                            <Card key={i} className="p-4 animate-pulse">
+                                <div className="h-4 bg-mist-dark/20 rounded w-1/3 mb-3" />
+                                <div className="h-3 bg-mist-dark/10 rounded w-1/2 mb-2" />
+                                <div className="h-8 bg-mist-dark/10 rounded w-20" />
+                            </Card>
+                        ))}
+                    </div>
+                ) : items.length === 0 ? (
                     <Card className="p-8 text-center">
                         <div className="text-2xl mb-2">🔬</div>
                         <p className="text-sm text-grey">No scenarios yet. Create one above.</p>
@@ -355,6 +374,9 @@ export default function ScenariosPage() {
                                                 Running…
                                             </span>
                                         ) : "▶ Run"}
+                                    </Button>
+                                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(s)} disabled={running !== null}>
+                                        🗑️
                                     </Button>
                                     {results[s.id] && <span className="text-xs text-algae-dark font-medium">✓ {results[s.id].result.runs} runs</span>}
                                 </div>
@@ -433,6 +455,15 @@ export default function ScenariosPage() {
                 </div>
                 <p className="px-5 py-3 text-[10px] text-grey">Run scenarios first to populate compare table.</p>
             </Card>
+            <ConfirmDialog
+                open={deleteTarget !== null}
+                title="Delete scenario?"
+                message={`This will permanently delete "${deleteTarget?.name ?? ''}". This action cannot be undone.`}
+                confirmLabel="Delete"
+                variant="danger"
+                onConfirm={() => { if (deleteTarget) deleteScenario(deleteTarget); }}
+                onCancel={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

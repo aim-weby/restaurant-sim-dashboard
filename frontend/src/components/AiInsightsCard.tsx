@@ -56,6 +56,7 @@ export default function AiInsightsCard({ weekId }: { weekId: number }) {
                 <button
                     onClick={analyze}
                     disabled={loading}
+                    aria-label={fetched ? "Refresh AI analysis" : "Analyze with AI"}
                     className="px-4 py-1.5 rounded-lg text-sm font-medium
                         bg-gradient-to-r from-violet-600 to-purple-600
                         hover:from-violet-500 hover:to-purple-500

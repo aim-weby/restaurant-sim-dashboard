@@ -30,16 +30,19 @@ export default function Breadcrumbs() {
     return (
         <nav className="flex items-center gap-1.5 text-[11px] text-grey mb-4">
             <Link to="/" className="hover:text-deep-blue transition">🏠</Link>
-            {crumbs.map((c) => (
-                <span key={c.path} className="flex items-center gap-1.5">
-                    <span className="text-grey/40">/</span>
-                    {c.isLast ? (
-                        <span className="text-mariana font-medium">{c.label}</span>
-                    ) : (
-                        <Link to={c.path} className="hover:text-deep-blue transition">{c.label}</Link>
-                    )}
-                </span>
-            ))}
+            {crumbs.map((c) => {
+                const isNumericSegment = /^#?\d+$/.test(c.label);
+                return (
+                    <span key={c.path} className="flex items-center gap-1.5">
+                        <span className="text-grey/40">/</span>
+                        {c.isLast || isNumericSegment ? (
+                            <span className={c.isLast ? "text-mariana font-medium" : "text-grey"}>{c.label}</span>
+                        ) : (
+                            <Link to={c.path} className="hover:text-deep-blue transition">{c.label}</Link>
+                        )}
+                    </span>
+                );
+            })}
         </nav>
     );
 }

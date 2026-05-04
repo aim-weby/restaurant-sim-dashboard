@@ -46,7 +46,7 @@ class SimulationOverrides(BaseModel):
 
 class SimulationRunRequest(BaseModel):
     baseline_week_id: int
-    runs: int = Field(default=200, ge=10, le=5000)
+    runs: int = Field(default=1000, ge=10, le=5000)
     seed: int | None = None
 
     overrides: SimulationOverrides = Field(default_factory=SimulationOverrides)

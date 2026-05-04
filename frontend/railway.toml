@@ -1,0 +1,11 @@
+# Railway configuration for the Vite/React frontend service
+# Root directory: /frontend
+
+[build]
+builder = "nixpacks"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+# Use a lightweight static server to serve the dist/ directory
+startCommand = "npx -y serve dist --listen $PORT --single"
+healthcheckTimeout = 120

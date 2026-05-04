@@ -11,7 +11,7 @@ from app.models.opening_hours import OpeningHours
 
 router = APIRouter(prefix="/opening-hours", tags=["opening-hours"])
 
-WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+from app.constants import WEEKDAY_LABELS
 
 
 class OpeningHoursItem(BaseModel):

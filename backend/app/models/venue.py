@@ -9,8 +9,6 @@ class VenueSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     name: Mapped[str] = mapped_column(String, default="My Venue")
-    timezone: Mapped[str] = mapped_column(String, default="Europe/Prague")
-    currency: Mapped[str] = mapped_column(String, default="CZK")
 
     seats_total: Mapped[int] = mapped_column(Integer, default=40)
     tables_count: Mapped[int] = mapped_column(Integer, default=10)

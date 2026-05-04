@@ -2,7 +2,6 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useKeyboardShortcuts, KeyboardShortcutHelp } from "../hooks/useKeyboardShortcuts";
 import type { Shortcut } from "../hooks/useKeyboardShortcuts";
-import { useTheme } from "../components/ThemeProvider";
 import Breadcrumbs from "../components/Breadcrumbs";
 import AiAdvisorChat from "../components/AiAdvisorChat";
 
@@ -67,7 +66,7 @@ export default function Layout() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
     const navigate = useNavigate();
-    const { theme, toggle: toggleTheme } = useTheme();
+
 
     const shortcuts: Shortcut[] = [
         { key: "b", ctrl: true, label: "Go to Baseline Weeks", action: () => navigate("/baseline-weeks") },
@@ -92,7 +91,7 @@ export default function Layout() {
             <aside className={`
                 fixed inset-y-0 left-0 z-40 w-60 bg-mariana flex flex-col
                 transition-transform duration-200
-                lg:translate-x-0 lg:static lg:z-auto
+                lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen lg:z-auto
                 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
             `}>
                 {/* Logo */}
@@ -139,30 +138,13 @@ export default function Layout() {
                 {/* Bottom branding */}
                 <div className="px-5 py-3 border-t border-white/10 flex items-center justify-between">
                     <span className="text-[10px] text-white/25">BP Thesis · VŠE 2026</span>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={toggleTheme}
-                            className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10 transition-all"
-                            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-                        >
-                            {theme === "dark" ? (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
-                                </svg>
-                            ) : (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
-                                </svg>
-                            )}
-                        </button>
-                        <button
-                            onClick={() => setHelpOpen(true)}
-                            className="text-[10px] text-white/25 hover:text-white/60 transition"
-                            title="Keyboard shortcuts (?)"
-                        >
-                            ⌨️
-                        </button>
-                    </div>
+                    <button
+                        onClick={() => setHelpOpen(true)}
+                        className="text-[10px] text-white/25 hover:text-white/60 transition"
+                        title="Keyboard shortcuts (?)"
+                    >
+                        ⌨️
+                    </button>
                 </div>
             </aside>
 

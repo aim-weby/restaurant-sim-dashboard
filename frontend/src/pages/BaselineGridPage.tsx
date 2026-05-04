@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useCallback } from "react";
+import { useEffect, useMemo, useCallback, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { BaselineCell, Daypart } from "../api/types";
+import { WEEKDAYS } from "../utils/format";
 import { useToast } from "../components/Toast";
 import { useUndoRedo } from "../hooks/useUndoRedo";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
@@ -11,7 +12,7 @@ import Card from "../components/Card";
 import Button from "../components/Button";
 import { useState } from "react";
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
 
 function keyOf(weekday: number, daypartId: number) {
     return `${weekday}:${daypartId}`;
@@ -27,7 +28,7 @@ export default function BaselineGridPage() {
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
-    const { state: cells, push: pushCells, undo, redo, reset: resetCells, canUndo, canRedo, historyLength } = useUndoRedo<Record<string, BaselineCell>>({});
+    const { state: cells, push: pushCells, replace: replaceCells, undo, redo, reset: resetCells, canUndo, canRedo, historyLength } = useUndoRedo<Record<string, BaselineCell>>({});
 
     useEffect(() => {
         if (!Number.isFinite(week)) return;
@@ -60,8 +61,14 @@ export default function BaselineGridPage() {
             ...cells,
             [k]: { ...(cells[k] ?? { weekday, daypart_id: daypartId, arrivals_groups: 0, avg_spend_per_group: 0, avg_party_size: 0 }), ...patch },
         };
-        pushCells(newCells);
-    }, [cells, pushCells]);
+        replaceCells(newCells); // live update without undo snapshot
+    }, [cells, replaceCells]);
+
+    const cellsRef = useRef(cells);
+    cellsRef.current = cells;
+    const snapshotCell = useCallback(() => {
+        pushCells(cellsRef.current); // creates an undo entry on focus (before editing)
+    }, [pushCells]);
 
     async function saveAll() {
         setSaving(true);
@@ -92,6 +99,14 @@ export default function BaselineGridPage() {
     ];
     useKeyboardShortcuts(shortcuts);
 
+    // U5: Warn about unsaved changes on page leave
+    useEffect(() => {
+        if (!canUndo) return;
+        const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [canUndo]);
+
     if (!Number.isFinite(week)) return <div className="p-6 text-red-600">Invalid weekId.</div>;
 
     return (
@@ -103,6 +118,7 @@ export default function BaselineGridPage() {
                         onClick={undo}
                         disabled={!canUndo}
                         title="Undo (Ctrl+Z)"
+                        aria-label="Undo"
                         className={`p-1.5 rounded-lg transition-all ${canUndo ? "text-deep-blue hover:bg-deep-blue/10" : "text-grey/40 cursor-not-allowed"}`}
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -113,6 +129,7 @@ export default function BaselineGridPage() {
                         onClick={redo}
                         disabled={!canRedo}
                         title="Redo (Ctrl+Shift+Z)"
+                        aria-label="Redo"
                         className={`p-1.5 rounded-lg transition-all ${canRedo ? "text-deep-blue hover:bg-deep-blue/10" : "text-grey/40 cursor-not-allowed"}`}
                     >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -174,6 +191,7 @@ export default function BaselineGridPage() {
                                                         type="number"
                                                         className="!text-xs !py-1"
                                                         value={cell.value.arrivals_groups}
+                                                        onFocus={snapshotCell}
                                                         onChange={(e) => updateCell(cell.weekday, cell.daypartId, { arrivals_groups: Number(e.target.value) })}
                                                     />
                                                 </div>
@@ -183,6 +201,7 @@ export default function BaselineGridPage() {
                                                         type="number"
                                                         className="!text-xs !py-1"
                                                         value={cell.value.avg_spend_per_group}
+                                                        onFocus={snapshotCell}
                                                         onChange={(e) => updateCell(cell.weekday, cell.daypartId, { avg_spend_per_group: Number(e.target.value) })}
                                                     />
                                                 </div>
@@ -193,6 +212,7 @@ export default function BaselineGridPage() {
                                                         step="0.1"
                                                         className="!text-xs !py-1"
                                                         value={cell.value.avg_party_size}
+                                                        onFocus={snapshotCell}
                                                         onChange={(e) => updateCell(cell.weekday, cell.daypartId, { avg_party_size: Number(e.target.value) })}
                                                     />
                                                 </div>

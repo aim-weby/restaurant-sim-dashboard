@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,7 @@ def get_or_create(db: Session) -> CostSettings:
     if row is None:
         row = CostSettings()
         db.add(row)
-        db.commit()
+        db.execute(text("UPDATE baseline_weeks SET kpis_cache_json = NULL")); db.commit()
         db.refresh(row)
     return row
 
@@ -26,6 +27,6 @@ def update_costs(payload: CostSettingsUpdate, db: Session = Depends(get_db)):
     row.fixed_cost_week = payload.fixed_cost_week
     row.food_cost_pct = payload.food_cost_pct
     db.add(row)
-    db.commit()
+    db.execute(text("UPDATE baseline_weeks SET kpis_cache_json = NULL")); db.commit()
     db.refresh(row)
     return row

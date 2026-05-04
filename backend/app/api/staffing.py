@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -49,7 +50,7 @@ def upsert_staffing(payload: list[StaffingUpsert], db: Session = Depends(get_db)
 
         updated.append(row)
 
-    db.commit()
+    db.execute(text("UPDATE baseline_weeks SET kpis_cache_json = NULL")); db.commit()
     for r in updated:
         db.refresh(r)
     return updated

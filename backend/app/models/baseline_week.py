@@ -11,3 +11,4 @@ class BaselineWeek(Base):
     # pondělí daného týdne
     week_start: Mapped[str] = mapped_column(String, nullable=False)  # "YYYY-MM-DD" (MVP)
     label: Mapped[str] = mapped_column(String, default="Baseline week")
+    kpis_cache_json: Mapped[str | None] = mapped_column(String, nullable=True)

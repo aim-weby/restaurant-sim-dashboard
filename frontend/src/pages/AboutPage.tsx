@@ -137,7 +137,7 @@ export default function AboutPage() {
                     ))}
                 </div>
                 <p className="text-sm leading-relaxed text-mariana/80">
-                    Each scenario runs N simulations (default 200) with a fixed seed for reproducibility.
+                    Each scenario runs N simulations (default 1000) with a fixed seed for reproducibility.
                     Results are reported as mean, p10, p50, and p90 across all runs.
                 </p>
             </Card>

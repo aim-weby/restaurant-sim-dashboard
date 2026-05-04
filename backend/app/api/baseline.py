@@ -14,6 +14,10 @@ from app.models.staffing_plan import StaffingPlan
 from app.models.simulation_params import SimulationParams
 from app.models.venue import VenueSettings
 
+import json
+from app.schemas.simulation import SimulationRunRequest, SimulationOverrides
+from app.api.simulation import run_sim
+
 router = APIRouter(prefix="/baseline-weeks", tags=["baseline"])
 
 # ---- Weeks ----
@@ -40,6 +44,19 @@ def update_week(week_id: int, payload: BaselineWeekUpdate, db: Session = Depends
     db.commit()
     db.refresh(week)
     return week
+
+@router.delete("/{week_id}", status_code=204)
+def delete_week(week_id: int, db: Session = Depends(get_db)):
+    week = db.query(BaselineWeek).filter(BaselineWeek.id == week_id).first()
+    if week is None:
+        raise HTTPException(status_code=404, detail="Baseline week not found")
+    # Cascade delete related data
+    db.query(BaselineDaypartData).filter(BaselineDaypartData.baseline_week_id == week_id).delete()
+    from app.models.simulation_scenario import SimulationScenario
+    db.query(SimulationScenario).filter(SimulationScenario.baseline_week_id == week_id).delete()
+    db.query(SimulationParams).filter(SimulationParams.baseline_week_id == week_id).delete()
+    db.delete(week)
+    db.commit()
 
 # ---- Grid cells ----
 @router.get("/{week_id}/data", response_model=list[BaselineCellOut])
@@ -96,14 +113,18 @@ def upsert_week_data(week_id: int, payload: list[BaselineCellUpsert], db: Sessio
 
     db.commit()
 
+    # Clear cache
+    week.kpis_cache_json = None
+    db.add(week)
+    db.commit()
+
     # refresh rows
     for r in updated_rows:
         db.refresh(r)
 
     return updated_rows
 
-@router.get("/{week_id}/kpis")
-def get_week_kpis(week_id: int, db: Session = Depends(get_db)):
+def _compute_deterministic_kpis(week_id: int, db: Session):
     rows = (
         db.query(BaselineDaypartData)
         .filter(BaselineDaypartData.baseline_week_id == week_id)
@@ -170,9 +191,7 @@ def get_week_kpis(week_id: int, db: Session = Depends(get_db)):
             "finance.revenue": rev,
         })
 
-    # currency from venue
-    venue = db.query(VenueSettings).first()
-    currency = venue.currency if venue else "CZK"
+    # removed currency logic
 
     # labor by daypart
     by_daypart_labor: dict[int, float] = {}
@@ -185,7 +204,6 @@ def get_week_kpis(week_id: int, db: Session = Depends(get_db)):
 
     return {
         "baseline_week_id": week_id,
-        "currency": currency,
         "kpis": {
             "finance.revenue": revenue,
             "finance.cogs": cogs,
@@ -207,6 +225,62 @@ def get_week_kpis(week_id: int, db: Session = Depends(get_db)):
             "fixed_cost_week": fixed_cost_week
         }
     }
+
+@router.get("/{week_id}/kpis")
+def get_week_kpis(week_id: int, db: Session = Depends(get_db)):
+    week = db.query(BaselineWeek).filter(BaselineWeek.id == week_id).first()
+    if week is None:
+        raise HTTPException(status_code=404, detail="Baseline week not found")
+
+    base_response = _compute_deterministic_kpis(week_id, db)
+
+    if week.kpis_cache_json:
+        try:
+            cached_kpis = json.loads(week.kpis_cache_json)
+            base_response["kpis"] = cached_kpis
+            return base_response
+        except Exception:
+            pass
+
+    # Run simulation if not cached
+    sim_req = SimulationRunRequest(
+        baseline_week_id=week_id,
+        runs=1000,
+        seed=42,
+        overrides=SimulationOverrides()
+    )
+    sim_res = run_sim(sim_req, db)
+    metrics = sim_res["result"]["metrics"]
+
+    rev = metrics.get("finance.revenue", {}).get("mean", 0)
+    cogs = metrics.get("finance.cogs", {}).get("mean", 0)
+    labor = metrics.get("finance.labor_cost", {}).get("mean", 0)
+    fixed = metrics.get("finance.fixed_cost", {}).get("mean", 0)
+    profit = metrics.get("finance.profit", {}).get("mean", 0)
+
+    sim_kpis = {
+        "finance.revenue": rev,
+        "finance.cogs": cogs,
+        "finance.labor_cost": labor,
+        "finance.fixed_cost": fixed,
+        "finance.profit": profit,
+        "finance.profit_margin": profit / rev if rev > 0 else 0,
+        "finance.labor_cost_ratio": labor / rev if rev > 0 else 0,
+        "finance.prime_cost_ratio": (cogs + labor) / rev if rev > 0 else 0,
+        "demand.arrivals_groups": metrics.get("demand.arrived_groups", {}).get("mean", 0),
+        "demand.served_groups": metrics.get("demand.served_groups", {}).get("mean", 0),
+        "demand.lost_groups": metrics.get("demand.lost_groups", {}).get("mean", 0),
+        "util.kitchen": metrics.get("util.kitchen", {}).get("mean", 0),
+        "util.service": metrics.get("util.service", {}).get("mean", 0)
+    }
+
+    base_response["kpis"] = sim_kpis
+
+    # Save to cache
+    week.kpis_cache_json = json.dumps(sim_kpis)
+    db.commit()
+
+    return base_response
 
 
 # ---------- Data Health ----------
@@ -458,8 +532,8 @@ def get_week_insights(week_id: int, db: Session = Depends(get_db)):
     Analyzes KPIs and data health against restaurant industry benchmarks
     and returns structured insights (no LLM needed).
     """
-    # 1) compute KPIs (reuse logic)
-    kpi_response = get_week_kpis(week_id, db)
+    # 1) compute KPIs (reuse deterministic logic to avoid running simulation just for insights, unless needed)
+    kpi_response = _compute_deterministic_kpis(week_id, db)
     kpis = kpi_response["kpis"]
 
     # 2) compute health (may fail if data is missing)

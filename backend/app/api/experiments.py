@@ -67,14 +67,14 @@ def _build_experiments(cells_db, staffing_db, dayparts_db) -> list[dict]:
     weak = _find_weakest_slot(cells_db)
 
     daypart_labels = {d.id: d.label for d in dayparts_db}
-    WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    from app.constants import WEEKDAY_LABELS
 
     peak_label = (
-        f"{WEEKDAY_NAMES[peak['weekday']]} "
+        f"{WEEKDAY_LABELS[peak['weekday']]} "
         f"{daypart_labels.get(peak['daypart_id'], f'DP{peak['daypart_id']}')}"
     )
     weak_label = (
-        f"{WEEKDAY_NAMES[weak['weekday']]} "
+        f"{WEEKDAY_LABELS[weak['weekday']]} "
         f"{daypart_labels.get(weak['daypart_id'], f'DP{weak['daypart_id']}')}"
     )
 
@@ -166,7 +166,7 @@ def _build_experiments(cells_db, staffing_db, dayparts_db) -> list[dict]:
 @router.post("/run")
 def run_experiments(
     baseline_week_id: int,
-    runs: int = 200,
+    runs: int = 1000,
     seed: int = 42,
     db: Session = Depends(get_db),
 ):
@@ -205,7 +205,26 @@ def run_experiments(
             overrides=exp["overrides"],
         )
         sim_output = run_sim(sim_req, db)
-        summary = sim_output["result"]
+        raw_metrics = sim_output["result"]["metrics"]
+
+        # Map full metric keys to short keys expected by frontend
+        KEY_MAP = {
+            "revenue": "finance.revenue",
+            "profit": "finance.profit",
+            "served_groups": "demand.served_groups",
+            "lost_groups": "demand.lost_groups",
+            "avg_wait_food": "queue.wait_food",
+            "p90_wait_food": "queue.wait_food_p90",
+            "util_kitchen": "util.kitchen",
+        }
+
+        # Build summary with short keys
+        summary = {}
+        for short_key, full_key in KEY_MAP.items():
+            if full_key in raw_metrics:
+                summary[short_key] = raw_metrics[full_key]
+            else:
+                summary[short_key] = {"mean": 0, "p50": 0, "p10": 0, "p90": 0}
 
         entry = {
             "id": exp["id"],
@@ -222,8 +241,7 @@ def run_experiments(
             # Compute deltas vs baseline
             if baseline_result:
                 deltas = {}
-                for metric in ["revenue", "profit", "served_groups", "lost_groups",
-                               "avg_wait_food", "p90_wait_food", "util_kitchen"]:
+                for metric in KEY_MAP.keys():
                     b_val = baseline_result.get(metric, {}).get("mean", 0)
                     s_val = summary.get(metric, {}).get("mean", 0)
                     deltas[metric] = {

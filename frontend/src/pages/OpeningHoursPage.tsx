@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "../api/endpoints";
 import type { OpeningHoursItem } from "../api/types";
 import { useToast } from "../components/Toast";
+import { WEEKDAYS_FULL } from "../utils/format";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
-
-const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 export default function OpeningHoursPage() {
     const toast = useToast();
@@ -16,7 +15,9 @@ export default function OpeningHoursPage() {
     const [saved, setSaved] = useState(false);
 
     useEffect(() => {
-        api.getOpeningHours().then(setRows);
+        api.getOpeningHours()
+            .then(setRows)
+            .catch((e) => toast.error(`Failed to load hours: ${e}`));
     }, []);
 
     function update(weekday: number, field: keyof OpeningHoursItem, value: string | boolean) {
@@ -66,7 +67,7 @@ export default function OpeningHoursPage() {
                         {rows.map((r) => (
                             <tr key={r.weekday} className={r.is_closed ? "opacity-40" : ""}>
                                 <td className="!pl-5 font-semibold text-mariana">
-                                    {WEEKDAYS[r.weekday]}
+                                    {WEEKDAYS_FULL[r.weekday]}
                                 </td>
                                 <td className="text-center">
                                     <input
@@ -94,6 +95,9 @@ export default function OpeningHoursPage() {
                                         className="w-4 h-4 rounded border-grey/50 text-deep-blue focus:ring-deep-blue/30 cursor-pointer"
                                     />
                                 </td>
+                                {!r.is_closed && r.close_time <= r.open_time && (
+                                    <td className="text-xs text-red-500 !border-0">Close must be after open</td>
+                                )}
                             </tr>
                         ))}
                     </tbody>

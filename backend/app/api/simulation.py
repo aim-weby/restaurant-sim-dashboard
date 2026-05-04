@@ -32,6 +32,7 @@ def _build_slots(
     staffing_db,
     dayparts_map: dict,
     overrides,
+    price_spend_mult: float = 1.0,
 ) -> list[DaypartSlot]:
     """Build DaypartSlot list from DB data + scenario overrides."""
 
@@ -55,6 +56,33 @@ def _build_slots(
         if s.role in ("kitchen", "service"):
             staffing_map[key][s.role] = count
 
+    opening_weekdays = {oh.weekday: (_hhmm_to_minutes(oh.open_time), _hhmm_to_minutes(oh.close_time)) for oh in overrides.opening_hours_changes}
+
+    # Pre-calculate averages for each daypart_id
+    daypart_averages = {}
+    for c in cells_db:
+        if c.arrivals_groups > 0:
+            if c.daypart_id not in daypart_averages:
+                daypart_averages[c.daypart_id] = {
+                    "arrivals": [], "spend": [], "party": [], "kitchen": [], "service": []
+                }
+            daypart_averages[c.daypart_id]["arrivals"].append(c.arrivals_groups)
+            daypart_averages[c.daypart_id]["spend"].append(float(c.avg_spend_per_group))
+            daypart_averages[c.daypart_id]["party"].append(float(c.avg_party_size))
+            staff = staffing_map.get((c.weekday, c.daypart_id), {"kitchen": 1, "service": 1})
+            daypart_averages[c.daypart_id]["kitchen"].append(staff["kitchen"])
+            daypart_averages[c.daypart_id]["service"].append(staff["service"])
+
+    for dp_id, vals in daypart_averages.items():
+        if vals["arrivals"]:
+            daypart_averages[dp_id] = {
+                "arrivals": sum(vals["arrivals"]) / len(vals["arrivals"]),
+                "spend": sum(vals["spend"]) / len(vals["spend"]),
+                "party": sum(vals["party"]) / len(vals["party"]),
+                "kitchen": max(1, round(sum(vals["kitchen"]) / len(vals["kitchen"]))),
+                "service": max(1, round(sum(vals["service"]) / len(vals["service"]))),
+            }
+
     slots = []
     for c in cells_db:
         dp = dayparts_map.get(c.daypart_id)
@@ -69,19 +97,44 @@ def _build_slots(
 
         weekday_offset = c.weekday * 24 * 60
 
+        is_newly_opened = False
+        if c.weekday in opening_weekdays and c.arrivals_groups == 0:
+            open_min, close_min = opening_weekdays[c.weekday]
+            if start_min < close_min and end_min > open_min:
+                is_newly_opened = True
+
         key = (c.weekday, c.daypart_id)
-        staff = staffing_map.get(key, {"kitchen": 1, "service": 1})
+        if is_newly_opened and c.daypart_id in daypart_averages:
+            avg = daypart_averages[c.daypart_id]
+            arrivals = avg["arrivals"]
+            spend = avg["spend"]
+            party = avg["party"]
+            k_staff = avg["kitchen"]
+            s_staff = avg["service"]
+            
+            # Since the day is artificially opened, we need to add labor costs for it
+            # We'll update staffing_map so labor cost computation later can pick it up
+            # wait, labor cost computation loops over staffing_db, which doesn't have these!
+            # It's better to add the staff back to the delta_map or staffing_map so later labor cost can be corrected.
+            # But labor cost uses staffing_db directly. We will handle labor cost issue separately or accept it for now.
+        else:
+            arrivals = c.arrivals_groups
+            spend = float(c.avg_spend_per_group)
+            party = float(c.avg_party_size)
+            staff = staffing_map.get(key, {"kitchen": 0, "service": 0})
+            k_staff = staff["kitchen"]
+            s_staff = staff["service"]
 
         slots.append(DaypartSlot(
             weekday=c.weekday,
             daypart_id=c.daypart_id,
             start_minutes=weekday_offset + start_min,
             duration_minutes=duration,
-            arrivals_groups=int(round(c.arrivals_groups * arrivals_multiplier)),
-            avg_spend_per_group=float(c.avg_spend_per_group) * spend_multiplier,
-            avg_party_size=float(c.avg_party_size),
-            kitchen_staff=staff["kitchen"],
-            service_staff=staff["service"],
+            arrivals_groups=int(round(arrivals * arrivals_multiplier)),
+            avg_spend_per_group=spend * spend_multiplier * price_spend_mult,
+            avg_party_size=party,
+            kitchen_staff=k_staff,
+            service_staff=s_staff,
         ))
 
     return slots
@@ -123,16 +176,19 @@ def run_sim(req: SimulationRunRequest, db: Session = Depends(get_db)):
         SimulationParams.baseline_week_id == req.baseline_week_id
     ).first()
 
-    # Compute price_delta from price_change override
+    # Compute price_delta (elasticity) and price_spend_mult (revenue) from price_change
     price_delta = 0.0
+    price_spend_mult = 1.0
     if req.overrides.price_change:
         if req.overrides.price_change.type == "percent":
             price_delta = req.overrides.price_change.value  # e.g. 0.08 = +8%
+            price_spend_mult = 1.0 + req.overrides.price_change.value
         elif req.overrides.price_change.type == "absolute":
             # Convert absolute to percent using avg spend
             avg_spend_values = [float(c.avg_spend_per_group) for c in cells_db if c.avg_spend_per_group > 0]
             avg_spend = sum(avg_spend_values) / len(avg_spend_values) if avg_spend_values else 1.0
             price_delta = req.overrides.price_change.value / avg_spend
+            price_spend_mult = (avg_spend + req.overrides.price_change.value) / avg_spend if avg_spend > 0 else 1.0
 
     sim_params = SimParams(
         prep_time_min=sp.prep_time_min if sp else 5.0,
@@ -150,13 +206,33 @@ def run_sim(req: SimulationRunRequest, db: Session = Depends(get_db)):
     )
 
     # --------- Build daypart slots ---------
-    slots = _build_slots(cells_db, staffing_db, dayparts_map, req.overrides)
+    slots = _build_slots(cells_db, staffing_db, dayparts_map, req.overrides, price_spend_mult)
 
-    # --------- Compute labor cost ---------
+    # --------- Compute labor cost (with staffing overrides) ---------
+    _delta_map: dict[tuple, int] = {}
+    for sc in req.overrides.staffing_changes:
+        _key = (sc.weekday, sc.daypart_id, sc.role)
+        _delta_map[_key] = _delta_map.get(_key, 0) + sc.delta_staff
+
     labor_cost = sum(
-        float(s.staff_count) * float(s.hourly_rate) * float(s.hours_in_daypart)
+        float(max(0, s.staff_count + _delta_map.get((s.weekday, s.daypart_id, s.role), 0)))
+        * float(s.hourly_rate)
+        * float(s.hours_in_daypart)
         for s in staffing_db
     )
+
+    # Add labor cost for newly opened days (synthetic slots)
+    opening_weekdays = {oh.weekday for oh in req.overrides.opening_hours_changes}
+    avg_hourly_rate_k = sum(float(s.hourly_rate) for s in staffing_db if s.role == "kitchen") / max(1, sum(1 for s in staffing_db if s.role == "kitchen"))
+    avg_hourly_rate_s = sum(float(s.hourly_rate) for s in staffing_db if s.role == "service") / max(1, sum(1 for s in staffing_db if s.role == "service"))
+    
+    for slot in slots:
+        # If this slot belongs to a newly opened weekday AND has no staffing_db entry
+        has_staffing_entry = any(s.weekday == slot.weekday and s.daypart_id == slot.daypart_id for s in staffing_db)
+        if slot.weekday in opening_weekdays and not has_staffing_entry:
+            hours = slot.duration_minutes / 60.0
+            labor_cost += (slot.kitchen_staff * avg_hourly_rate_k * hours)
+            labor_cost += (slot.service_staff * avg_hourly_rate_s * hours)
 
     # --------- Load costs ---------
     costs_db = db.query(CostSettings).first()

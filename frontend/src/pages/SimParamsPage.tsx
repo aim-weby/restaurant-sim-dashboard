@@ -47,6 +47,15 @@ export default function SimParamsPage() {
 
     async function save() {
         if (!data) return;
+        // Validate triangular distribution invariants
+        if (data.prep_time_min > data.prep_time_mode || data.prep_time_mode > data.prep_time_max) {
+            setError("Prep time must satisfy: min ≤ mode ≤ max");
+            return;
+        }
+        if (data.seat_time_min > data.seat_time_mode || data.seat_time_mode > data.seat_time_max) {
+            setError("Seat time must satisfy: min ≤ mode ≤ max");
+            return;
+        }
         setSaving(true);
         setError(null);
         setSaved(false);

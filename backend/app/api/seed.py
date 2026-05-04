@@ -44,8 +44,6 @@ def seed_demo(db: Session = Depends(get_db)):
     else:
         venue = VenueSettings(
             name="U Zlatého lva",
-            timezone="Europe/Prague",
-            currency="CZK",
             seats_total=40,
             tables_count=10,
             mode="dinein",

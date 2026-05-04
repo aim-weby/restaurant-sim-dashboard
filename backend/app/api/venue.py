@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,7 @@ def get_or_create_venue(db: Session) -> VenueSettings:
     if venue is None:
         venue = VenueSettings()
         db.add(venue)
-        db.commit()
+        db.execute(text("UPDATE baseline_weeks SET kpis_cache_json = NULL")); db.commit()
         db.refresh(venue)
     return venue
 
@@ -25,13 +26,11 @@ def update_venue(payload: VenueSettingsUpdate, db: Session = Depends(get_db)):
     venue = get_or_create_venue(db)
 
     venue.name = payload.name
-    venue.timezone = payload.timezone
-    venue.currency = payload.currency
     venue.seats_total = payload.seats_total
     venue.tables_count = payload.tables_count
     venue.mode = payload.mode
 
     db.add(venue)
-    db.commit()
+    db.execute(text("UPDATE baseline_weeks SET kpis_cache_json = NULL")); db.commit()
     db.refresh(venue)
     return venue

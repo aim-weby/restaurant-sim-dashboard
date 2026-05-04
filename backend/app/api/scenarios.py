@@ -63,6 +63,14 @@ def create_scenario(week_id: int, payload: ScenarioCreate, db: Session = Depends
     )
 
 
+@router.delete("/scenarios/{scenario_id}", status_code=204)
+def delete_scenario(scenario_id: int, db: Session = Depends(get_db)):
+    s = db.query(SimulationScenario).filter(SimulationScenario.id == scenario_id).first()
+    if s is None:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    db.delete(s)
+    db.commit()
+
 @router.post("/scenarios/{scenario_id}/run")
 def run_saved_scenario(scenario_id: int, req: ScenarioRunRequest, db: Session = Depends(get_db)):
     s = db.query(SimulationScenario).filter(SimulationScenario.id == scenario_id).first()
@@ -139,6 +147,22 @@ def scenario_kpis(scenario_id: int, db: Session = Depends(get_db)):
             spend_mult *= (avg_spend + ov.price_change.value) / avg_spend
 
     sc_revenue = base_revenue * arr_mult * spend_mult
+    sc_arrivals = base_arrivals * arr_mult
+    sc_labor = base_labor
+    
+    # Apply synthetic newly opened days
+    if ov.opening_hours_changes:
+        open_days_count = len(set(r.weekday for r in rows if r.arrivals_groups > 0))
+        if open_days_count > 0:
+            avg_rev_per_day = base_revenue / open_days_count
+            avg_arr_per_day = base_arrivals / open_days_count
+            avg_lab_per_day = base_labor / open_days_count
+            for oh in ov.opening_hours_changes:
+                # Check if currently closed
+                if sum(r.arrivals_groups for r in rows if r.weekday == oh.weekday) == 0:
+                    sc_revenue += avg_rev_per_day * arr_mult * spend_mult
+                    sc_arrivals += avg_arr_per_day * arr_mult
+                    sc_labor += avg_lab_per_day
 
     # 2) COGS: use overridden food_cost_pct if provided
     sc_food_cost_pct = ov.food_cost_pct_override if ov.food_cost_pct_override is not None else base_food_cost_pct
@@ -148,7 +172,6 @@ def scenario_kpis(scenario_id: int, db: Session = Depends(get_db)):
     #    Build a map of (weekday, daypart_id, role) → delta_staff
     #    For deterministic calc, we approximate: each delta_staff changes labor by
     #    delta_staff * avg_hourly_rate * avg_hours for that role
-    sc_labor = base_labor
     if ov.staffing_changes:
         # Build rate lookup from existing staffing
         role_rates: dict[str, list[tuple[float, float]]] = {}
@@ -203,7 +226,7 @@ def scenario_kpis(scenario_id: int, db: Session = Depends(get_db)):
         "finance.profit_margin": margin(sc_profit, sc_revenue),
         "finance.labor_cost_ratio": ratio(sc_labor, sc_revenue),
         "finance.prime_cost_ratio": ratio(sc_cogs + sc_labor, sc_revenue),
-        "demand.arrivals_groups": round(base_arrivals * arr_mult),
+        "demand.arrivals_groups": round(sc_arrivals),
     }
 
     deltas = {k: scenario_kpis[k] - baseline_kpis[k] for k in baseline_kpis}

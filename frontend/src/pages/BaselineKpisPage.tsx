@@ -5,19 +5,7 @@ import type { KpisResponse } from "../api/types";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 
-function formatValue(metric: string, value: number) {
-    if (metric.startsWith("finance.") && !metric.endsWith("_ratio") && !metric.endsWith("_margin")) {
-        return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(value);
-    }
-    if (metric.endsWith("_ratio") || metric.endsWith("_margin")) {
-        return `${(value * 100).toFixed(1)} %`;
-    }
-    return value.toFixed(2);
-}
-
-function niceLabel(key: string): string {
-    return key.split(".").pop()?.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) ?? key;
-}
+import { fmtValue, niceKey } from "../utils/format";
 
 const PRIMARY = [
     "finance.revenue", "finance.profit", "finance.cogs",
@@ -84,8 +72,8 @@ export default function BaselineKpisPage() {
                                 >
                                     <div className="flex justify-between items-start">
                                         <div>
-                                            <div className="text-[10px] text-grey uppercase tracking-wider font-medium">{niceLabel(r.key)}</div>
-                                            <div className="text-2xl font-extrabold text-mariana mt-1">{formatValue(r.key, r.value)}</div>
+                                            <div className="text-[10px] text-grey uppercase tracking-wider font-medium">{niceKey(r.key)}</div>
+                                            <div className="text-2xl font-extrabold text-mariana mt-1">{fmtValue(r.key, r.value)}</div>
                                             <div className="text-[10px] text-grey/60 mt-0.5 font-mono">{r.key}</div>
                                         </div>
                                         <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${meta.color} flex items-center justify-center text-sm shadow-lg flex-shrink-0`}>
@@ -185,9 +173,9 @@ export default function BaselineKpisPage() {
                                 </div>
 
                                 <div className="mt-3 grid grid-cols-3 gap-3 text-[10px] text-grey border-t border-mist-dark/20 pt-3">
-                                    <div>Revenue/group: <span className="font-bold text-mariana">{formatValue("finance.x", revenuePerGroup)}</span></div>
-                                    <div>Variable cost/group: <span className="font-bold text-mariana">{formatValue("finance.x", cogsPerGroup + laborPerGroup)}</span></div>
-                                    <div>Contribution/group: <span className="font-bold text-mariana">{formatValue("finance.x", contributionPerGroup)}</span></div>
+                                    <div>Revenue/group: <span className="font-bold text-mariana">{fmtValue("finance.x", revenuePerGroup)}</span></div>
+                                    <div>Variable cost/group: <span className="font-bold text-mariana">{fmtValue("finance.x", cogsPerGroup + laborPerGroup)}</span></div>
+                                    <div>Contribution/group: <span className="font-bold text-mariana">{fmtValue("finance.x", contributionPerGroup)}</span></div>
                                 </div>
                             </Card>
                         );

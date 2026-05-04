@@ -1,46 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { BaselineCell, KpisResponse, BaselineWeek, Scenario, ScenarioKpisResponse, SimulationResponse, DataHealthResponse } from "../api/types";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area, Legend, ComposedChart, Line } from "recharts";
+import { n, fmtCurrency, fmtPercent, fmtValue, WEEKDAYS } from "../utils/format";
+import type { BaselineCell, KpisResponse, BaselineWeek, Scenario, ScenarioKpisResponse, SimulationResponse, DataHealthResponse, MetricSummary } from "../api/types";
+import { ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area, Legend, ComposedChart, Line } from "recharts";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
-import { exportPdf } from "../utils/exportPdf";
+import ChartTooltip from "../components/ChartTooltip";
+import { useSimDefaults } from "../hooks/useSimDefaults";
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const CB = "#3366FF";
 const CG = "#04FF87";
 
-function n(v: any, fallback = 0) { const x = Number(v); return Number.isFinite(x) ? x : fallback; }
-function fmtCurrency(v: number) { return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v); }
-function fmtPercent(v: number) { return `${(v * 100).toFixed(1)} %`; }
-function fmtValue(metric: string, v: number) {
-    if (metric.startsWith("finance.") && !metric.endsWith("_ratio") && !metric.endsWith("_margin")) return fmtCurrency(v);
-    if (metric.endsWith("_ratio") || metric.endsWith("_margin")) return fmtPercent(v);
-    return v.toFixed(2);
-}
-
-type CompareMetricSummary = { p10: number; p50: number; p90: number };
-
-/* ── Custom tooltip ── */
-function ChartTooltip({ active, payload, label }: any) {
-    if (!active || !payload?.length) return null;
-    return (
-        <div className="bg-mariana/95 backdrop-blur-md text-white text-xs rounded-xl px-4 py-3 shadow-xl border border-white/10">
-            <div className="font-semibold mb-1.5">{label}</div>
-            {payload.map((p: any) => (
-                <div key={p.dataKey} className="flex justify-between gap-4 items-center">
-                    <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-                        {p.name ?? p.dataKey}
-                    </span>
-                    <span className="font-mono font-bold">{typeof p.value === "number" && p.value > 100 ? fmtCurrency(p.value) : p.value}</span>
-                </div>
-            ))}
-        </div>
-    );
-}
+type CompareMetricSummary = Pick<MetricSummary, "p10" | "p50" | "p90">;
 
 export default function ReportPage() {
     const nav = useNavigate();
@@ -61,8 +34,7 @@ export default function ReportPage() {
     const [loadingWeek, setLoadingWeek] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const [runs, setRuns] = useState(300);
-    const [seed, setSeed] = useState<number | "">(42);
+    const { runs, setRuns, seed, setSeed } = useSimDefaults();
 
     useEffect(() => {
         async function loadWeeks() {
@@ -101,7 +73,7 @@ export default function ReportPage() {
             }));
         }
         const sums = Array.from({ length: 7 }, () => ({ revenue: 0, groups: 0 }));
-        for (const c of grid) { const rev = n(c.arrivals_groups) * n((c as any).avg_spend_per_group); sums[c.weekday].revenue += rev; sums[c.weekday].groups += n(c.arrivals_groups); }
+        for (const c of grid) { const rev = n(c.arrivals_groups) * n(c.avg_spend_per_group); sums[c.weekday].revenue += rev; sums[c.weekday].groups += n(c.arrivals_groups); }
         return sums.map((x, i) => ({ weekday: WEEKDAYS[i], revenue: Math.round(x.revenue), groups: x.groups, avgSpend: x.groups > 0 ? Math.round(x.revenue / x.groups) : 0 }));
     }, [grid, kpis]);
 
@@ -176,7 +148,7 @@ export default function ReportPage() {
                         </>
                     )}
                     <Button variant="secondary" size="sm" onClick={exportJson}>📥 Export JSON</Button>
-                    <Button variant="secondary" size="sm" onClick={() => exportPdf("Restaurant Simulation Report")}>📄 Export PDF</Button>
+
                 </div>
             </PageHeader>
 

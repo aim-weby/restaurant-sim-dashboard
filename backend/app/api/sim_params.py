@@ -1,3 +1,4 @@
+from sqlalchemy import text
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
@@ -15,7 +16,7 @@ def get_sim_params(week_id: int, db: Session = Depends(get_db)):
         # Return defaults tied to this week (not yet persisted)
         row = SimulationParams(baseline_week_id=week_id)
         db.add(row)
-        db.commit()
+        db.execute(text("UPDATE baseline_weeks SET kpis_cache_json = NULL")); db.commit()
         db.refresh(row)
     return row
 
@@ -30,6 +31,6 @@ def put_sim_params(week_id: int, payload: SimulationParamsIn, db: Session = Depe
     for field, value in payload.model_dump().items():
         setattr(row, field, value)
 
-    db.commit()
+    db.execute(text("UPDATE baseline_weeks SET kpis_cache_json = NULL")); db.commit()
     db.refresh(row)
     return row

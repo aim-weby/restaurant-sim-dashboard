@@ -6,6 +6,7 @@ import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 /* Pre-built Czech restaurant template (typical Prague bistro, 7 weekdays × 3 dayparts) */
 const CZECH_TEMPLATE = {
@@ -50,6 +51,8 @@ export default function BaselineWeeksPage() {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [cloning, setCloning] = useState<number | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<BaselineWeek | null>(null);
+    const [factoryResetTarget, setFactoryResetTarget] = useState<boolean>(false);
     const [weekStart, setWeekStart] = useState("2026-02-03");
     const [label, setLabel] = useState("Test week");
 
@@ -122,10 +125,32 @@ export default function BaselineWeeksPage() {
 
     async function seedDemo() {
         try {
-            await fetch(`${import.meta.env.VITE_API_URL ?? "http://localhost:8000"}/seed/demo`, { method: "POST" });
+            await api.seedDemo();
             toast.success("Demo data seeded!");
             await load();
         } catch (e) { setError(String(e)); }
+    }
+
+    async function seedPresentation() {
+        try {
+            await api.seedPresentation();
+            toast.success("Factory reset complete. Seed presentation data loaded!");
+            setFactoryResetTarget(false);
+            await load();
+        } catch (e) {
+            setError(String(e));
+            setFactoryResetTarget(false);
+        }
+    }
+
+    async function handleDeleteWeek() {
+        if (!deleteTarget) return;
+        try {
+            await api.deleteWeek(deleteTarget.id);
+            toast.success(`Week "${deleteTarget.label}" deleted.`);
+            setDeleteTarget(null);
+            await load();
+        } catch (e) { setError(String(e)); setDeleteTarget(null); }
     }
 
     useEffect(() => { load(); }, []);
@@ -138,6 +163,9 @@ export default function BaselineWeeksPage() {
                 </Button>
                 <Button variant="secondary" size="sm" onClick={seedDemo}>
                     🌱 Seed Demo
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => setFactoryResetTarget(true)}>
+                    ⚠️ Factory Reset
                 </Button>
             </PageHeader>
 
@@ -240,12 +268,33 @@ export default function BaselineWeeksPage() {
                                             </span>
                                         ) : "📋 Clone"}
                                     </Button>
+                                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(w)}>
+                                        🗑️
+                                    </Button>
                                 </div>
                             </div>
                         </Card>
                     ))}
                 </div>
             )}
+            <ConfirmDialog
+                open={deleteTarget !== null}
+                title="Delete baseline week?"
+                message={`This will permanently delete "${deleteTarget?.label}" and all its associated data (grid, scenarios, sim params). This cannot be undone.`}
+                confirmLabel="Delete"
+                variant="danger"
+                onConfirm={handleDeleteWeek}
+                onCancel={() => setDeleteTarget(null)}
+            />
+            <ConfirmDialog
+                open={factoryResetTarget}
+                title="Factory Reset App?"
+                message="This will WIPE ALL DATA in the application (baseline weeks, scenarios, settings, etc.) and reset it back to the original presentation seed state. This cannot be undone."
+                confirmLabel="Factory Reset"
+                variant="danger"
+                onConfirm={seedPresentation}
+                onCancel={() => setFactoryResetTarget(false)}
+            />
         </div>
     );
 }

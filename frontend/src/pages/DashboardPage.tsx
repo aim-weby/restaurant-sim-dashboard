@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { BaselineCell, DataHealthResponse, InsightItem, KpisResponse } from "../api/types";
+import { fmtCurrency, fmtPercent, n, sum, median, pct, WEEKDAYS } from "../utils/format";
+import type { BaselineCell, DataHealthResponse, KpisResponse, Scenario, SimulationResponse } from "../api/types";
 import {
     ResponsiveContainer,
-    BarChart,
-    Bar,
     XAxis,
     YAxis,
     Tooltip,
@@ -22,51 +21,14 @@ import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
 import AiInsightsCard from "../components/AiInsightsCard";
+import ChartTooltip from "../components/ChartTooltip";
+import { useSimDefaults } from "../hooks/useSimDefaults";
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const CHART_BLUE = "#0000FF";
 const CHART_GREEN = "#04FF87";
 const CHART_BLUE_LIGHT = "#6366f1";
 
-function fmtCurrency(v: number) {
-    return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v);
-}
-function fmtPercent(v: number) { return `${(v * 100).toFixed(1)} %`; }
-function n(v: any, fallback = 0) { const x = Number(v); return Number.isFinite(x) ? x : fallback; }
-function sum(arr: number[]) { return arr.reduce((a, b) => a + b, 0); }
-function median(values: number[]) {
-    if (values.length === 0) return 0;
-    const v = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(v.length / 2);
-    return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
-}
-function pct(v: number) { return `${(v * 100).toFixed(0)}%`; }
 
-/* ── Custom tooltip for modern look ── */
-function ChartTooltip({ active, payload, label }: any) {
-    if (!active || !payload?.length) return null;
-    return (
-        <div className="bg-mariana/95 backdrop-blur-md text-white text-xs rounded-xl px-4 py-3 shadow-xl border border-white/10">
-            <div className="font-semibold mb-1.5">{label}</div>
-            {payload.map((p: any) => (
-                <div key={p.dataKey} className="flex justify-between gap-4 items-center">
-                    <span className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-                        {p.name ?? p.dataKey}
-                    </span>
-                    <span className="font-mono font-bold">{typeof p.value === "number" && p.value > 100 ? fmtCurrency(p.value) : p.value}</span>
-                </div>
-            ))}
-        </div>
-    );
-}
-
-type ScenarioLite = { id: number; baseline_week_id: number; name: string; created_at?: string; params: any };
-type MetricSummary = { mean: number; p10: number; p50: number; p90: number };
-type SimulationResponseLite = {
-    baseline_week_id: number; week_start: string; overrides?: any;
-    result: { runs: number; metrics: Record<string, MetricSummary>; assumptions: Record<string, any> };
-};
 
 /* ── KPI Card with mini-bar sparkline ── */
 function KpiCard({ label, value, subtext, icon, bars, color = "blue" }: { label: string; value: string; subtext?: string; icon: string; bars?: number[]; color?: "blue" | "green" | "amber" | "indigo" }) {
@@ -85,15 +47,17 @@ function KpiCard({ label, value, subtext, icon, bars, color = "blue" }: { label:
                     {icon}
                 </div>
             </div>
-            {bars && bars.length > 0 && (
-                <div className="flex items-end gap-0.5 mt-3 h-6">
-                    {bars.map((b, i) => {
-                        const max = Math.max(...bars, 1);
-                        const h = Math.max(4, (b / max) * 24);
-                        return <div key={i} className={`flex-1 rounded-sm transition-all duration-300 ${i === bars.length - 1 ? barActiveMap[color] : barColorMap[color]}`} style={{ height: h }} />;
-                    })}
-                </div>
-            )}
+            {bars && bars.length > 0 && (() => {
+                const max = Math.max(...bars, 1);
+                return (
+                    <div className="flex items-end gap-0.5 mt-3 h-6">
+                        {bars.map((b, i) => {
+                            const h = Math.max(4, (b / max) * 24);
+                            return <div key={i} className={`flex-1 rounded-sm transition-all duration-300 ${i === bars.length - 1 ? barActiveMap[color] : barColorMap[color]}`} style={{ height: h }} />;
+                        })}
+                    </div>
+                );
+            })()}
         </Card>
     );
 }
@@ -106,21 +70,17 @@ export default function DashboardPage() {
     const [grid, setGrid] = useState<BaselineCell[]>([]);
     const [dayparts, setDayparts] = useState<{ id: number; label: string; sort_order?: number }[]>([]);
 
-    const [scenarios, setScenarios] = useState<ScenarioLite[]>([]);
+    const [scenarios, setScenarios] = useState<Scenario[]>([]);
     const [selectedScenarioId, setSelectedScenarioId] = useState<number | null>(null);
-    const [scenarioRun, setScenarioRun] = useState<SimulationResponseLite | null>(null);
+    const [scenarioRun, setScenarioRun] = useState<SimulationResponse | null>(null);
 
-    const [runs, setRuns] = useState(200);
-    const [seed, setSeed] = useState<number | "">(42);
+    const { runs, setRuns, seed, setSeed } = useSimDefaults();
 
     const [health, setHealth] = useState<DataHealthResponse | null>(null);
 
-    const [aiOpen, setAiOpen] = useState(false);
-    const [aiInsights, setAiInsights] = useState<InsightItem[]>([]);
-    const [aiBusy, setAiBusy] = useState(false);
-
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [runningScenario, setRunningScenario] = useState(false);
 
     useEffect(() => {
         if (!Number.isFinite(week)) return;
@@ -132,11 +92,11 @@ export default function DashboardPage() {
                     api.listScenarios(week), api.getHealth(week),
                 ]);
                 setKpis(k); setGrid(g);
-                setDayparts(dp.map((d: any) => ({ id: d.id, label: d.label, sort_order: d.sort_order })));
-                setScenarios(sc as any); setHealth(h);
-                const first = (sc as any[])?.[0]?.id;
+                setDayparts(dp.map((d) => ({ id: d.id, label: d.label, sort_order: d.sort_order })));
+                setScenarios(sc); setHealth(h);
+                const first = sc[0]?.id;
                 if (first && selectedScenarioId === null) setSelectedScenarioId(first);
-            } catch (e) { console.error("Dashboard load error:", e); setError(String(e)); }
+            } catch (e) { setError(String(e)); }
             finally { setLoading(false); }
         }
         load();
@@ -148,7 +108,7 @@ export default function DashboardPage() {
     const revenueByWeekday = useMemo(() => {
         const sums = Array.from({ length: 7 }, () => ({ revenue: 0, groups: 0, avgSpend: 0 }));
         for (const c of grid) {
-            const rev = n(c.arrivals_groups) * n((c as any).avg_spend_per_group);
+            const rev = n(c.arrivals_groups) * n(c.avg_spend_per_group);
             sums[c.weekday].revenue += rev;
             sums[c.weekday].groups += n(c.arrivals_groups);
         }
@@ -169,9 +129,9 @@ export default function DashboardPage() {
 
     const cellStats = useMemo(() => {
         const totalCells = 7 * Math.max(1, daypartsSorted.length);
-        const filled = grid.filter((c) => n(c.arrivals_groups) > 0 || n((c as any).avg_spend_per_group) > 0).length;
+        const filled = grid.filter((c) => n(c.arrivals_groups) > 0 || n(c.avg_spend_per_group) > 0).length;
         const arrivalsList = grid.map((c) => n(c.arrivals_groups));
-        const spendList = grid.map((c) => n((c as any).avg_spend_per_group)).filter((x) => x > 0);
+        const spendList = grid.map((c) => n(c.avg_spend_per_group)).filter((x) => x > 0);
         const totalGroups = sum(arrivalsList);
         const coverage = totalCells > 0 ? filled / totalCells : 0;
         return { totalCells, filled, coverage, totalGroups, spendMin: spendList.length ? Math.min(...spendList) : 0, spendMax: spendList.length ? Math.max(...spendList) : 0, spendMedian: spendList.length ? median(spendList) : 0 };
@@ -229,10 +189,10 @@ export default function DashboardPage() {
     }, [bestCells, cellStats, margin, primeRatio, health]);
 
     // Scenario delta helpers
-    function simP50(metricKey: string) { const r = scenarioRun?.result.metrics?.[metricKey]; return r ? n(r.p50) : null; }
     const scenarioDelta = useMemo(() => {
-        const p50Profit = simP50("finance.profit"); const p50Revenue = simP50("finance.revenue");
-        const p50Lost = simP50("demand.lost_groups"); const p50Cogs = simP50("finance.cogs");
+        function p50(key: string) { const r = scenarioRun?.result.metrics?.[key]; return r ? n(r.p50) : null; }
+        const p50Profit = p50("finance.profit"); const p50Revenue = p50("finance.revenue");
+        const p50Lost = p50("demand.lost_groups"); const p50Cogs = p50("finance.cogs");
         return {
             profit: p50Profit === null ? null : { base: profit, scen: p50Profit, delta: p50Profit - profit },
             revenue: p50Revenue === null ? null : { base: revenue, scen: p50Revenue, delta: p50Revenue - revenue },
@@ -244,19 +204,13 @@ export default function DashboardPage() {
     async function runSelectedScenario() {
         if (!selectedScenarioId) { setError("Select a scenario first."); return; }
         setError(null);
+        setRunningScenario(true);
         try {
             setScenarioRun(null);
             const res = await api.runScenario(selectedScenarioId, { runs, seed: seed === "" ? null : Number(seed) });
-            setScenarioRun(res as any);
-            if (aiOpen) setAiInsights([]);
+            setScenarioRun(res);
         } catch (e) { setError(String(e)); }
-    }
-
-    async function onExplain() {
-        setAiOpen(true); setAiBusy(true);
-        try { const res = await api.getInsights(week); setAiInsights(res.insights); }
-        catch (e) { setAiInsights([{ id: "error", category: "data", severity: "warning", text: `Failed to load insights: ${e}` }]); }
-        finally { setAiBusy(false); }
+        finally { setRunningScenario(false); }
     }
 
     if (!Number.isFinite(week)) return <div className="p-6 text-mariana">Invalid weekId.</div>;
@@ -431,12 +385,9 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
                 {/* Insights – 3 col */}
                 <Card className="lg:col-span-3 p-5">
-                    <div className="flex justify-between items-baseline gap-2 mb-4">
-                        <div>
-                            <h3 className="text-sm font-bold text-mariana">Auto insights</h3>
-                            <p className="text-xs text-grey">Generated from baseline week grid + KPIs</p>
-                        </div>
-                        <Button variant="ghost" size="sm" onClick={onExplain}>{aiBusy ? "Thinking…" : "🤖 Explain"}</Button>
+                    <div className="mb-4">
+                        <h3 className="text-sm font-bold text-mariana">Auto insights</h3>
+                        <p className="text-xs text-grey">Generated from baseline week grid + KPIs</p>
                     </div>
                     <div className="space-y-2">
                         {insights.map((x, idx) => {
@@ -449,40 +400,6 @@ export default function DashboardPage() {
                             );
                         })}
                     </div>
-
-                    {/* AI insights panel */}
-                    {aiOpen && (
-                        <div className="mt-4 pt-4 border-t border-mist-dark/10">
-                            <h4 className="text-xs font-bold text-mariana mb-2">🤖 Rule-Based Insights</h4>
-                            {aiBusy ? (
-                                <div className="flex items-center gap-2">
-                                    <div className="w-4 h-4 border-2 border-deep-blue/30 border-t-deep-blue rounded-full animate-spin" />
-                                    <span className="text-xs text-grey">Analyzing…</span>
-                                </div>
-                            ) : aiInsights.length > 0 ? (
-                                <div className="space-y-2">
-                                    {aiInsights.map((ins) => {
-                                        const badge = ins.severity === "critical" ? "🔴" : ins.severity === "warning" ? "🟡" : ins.severity === "positive" ? "🟢" : "💡";
-                                        const bg = ins.severity === "critical" ? "bg-red-50" : ins.severity === "warning" ? "bg-amber-50" : ins.severity === "positive" ? "bg-green-50" : "bg-indigo-50";
-                                        return (
-                                            <div key={ins.id} className={`${bg} rounded-lg p-2.5 text-xs leading-relaxed`}>
-                                                <span className="mr-1.5">{badge}</span>
-                                                <span className="font-semibold capitalize text-grey text-[10px]">{ins.category}</span>
-                                                <span className="mx-1.5 text-mist-dark">·</span>
-                                                <span className="text-mariana/80">{ins.text}</span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <p className="text-xs text-grey">No insights available.</p>
-                            )}
-                            <div className="flex gap-2 mt-3">
-                                <Button variant="ghost" size="sm" onClick={onExplain}>Refresh</Button>
-                                <Button variant="ghost" size="sm" onClick={() => { setAiOpen(false); setAiInsights([]); }}>Clear</Button>
-                            </div>
-                        </div>
-                    )}
                 </Card>
 
                 {/* Highlights – 2 col */}
@@ -546,7 +463,14 @@ export default function DashboardPage() {
                             <input type="number" min={10} max={5000} value={runs} onChange={(e) => setRuns(Number(e.target.value))} className="!w-16 !py-1.5 !text-xs" title="Runs" />
                             <input type="number" value={seed} onChange={(e) => setSeed(e.target.value === "" ? "" : Number(e.target.value))} placeholder="seed" className="!w-16 !py-1.5 !text-xs" />
                         </div>
-                        <Button size="sm" onClick={runSelectedScenario} disabled={!selectedScenarioId}>Run</Button>
+                        <Button size="sm" onClick={runSelectedScenario} disabled={!selectedScenarioId || runningScenario}>
+                            {runningScenario ? (
+                                <span className="flex items-center gap-1.5">
+                                    <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    Running…
+                                </span>
+                            ) : "Run"}
+                        </Button>
                         <Link to={`/baseline-weeks/${week}/scenarios`} className="text-xs text-deep-blue hover:underline">Manage →</Link>
                     </div>
                 </div>

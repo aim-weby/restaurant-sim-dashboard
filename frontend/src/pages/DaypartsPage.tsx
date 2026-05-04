@@ -4,16 +4,18 @@ import type { Daypart } from "../api/types";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function DaypartsPage() {
     const [items, setItems] = useState<Daypart[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
 
     const [newLabel, setNewLabel] = useState("");
     const [newStart, setNewStart] = useState("11:00");
     const [newEnd, setNewEnd] = useState("14:00");
-    const [newOrder, setNewOrder] = useState(0);
+    const newOrder = items.length > 0 ? Math.max(...items.map(i => i.sort_order)) + 1 : 0;
 
     async function load() {
         setLoading(true);
@@ -28,6 +30,36 @@ export default function DaypartsPage() {
     }
 
     useEffect(() => { load(); }, []);
+
+    /* ── Overlap detection ── */
+    function toMin(t: string) {
+        const [h, m] = t.split(":").map(Number);
+        return h * 60 + m;
+    }
+
+    function findOverlaps(allItems: { id?: number; start_time: string; end_time: string; label: string }[]) {
+        const overlapping = new Set<number | undefined>();
+        for (let i = 0; i < allItems.length; i++) {
+            for (let j = i + 1; j < allItems.length; j++) {
+                const a = allItems[i], b = allItems[j];
+                const aStart = toMin(a.start_time), aEnd = toMin(a.end_time);
+                const bStart = toMin(b.start_time), bEnd = toMin(b.end_time);
+                if (aStart < bEnd && bStart < aEnd) {
+                    overlapping.add(a.id);
+                    overlapping.add(b.id);
+                }
+            }
+        }
+        return overlapping;
+    }
+
+    const existingOverlaps = findOverlaps(items);
+    const newEndValid = toMin(newEnd) > toMin(newStart);
+    const newOverlapsExisting = newLabel.trim() && newEndValid && items.some((dp) => {
+        const aStart = toMin(newStart), aEnd = toMin(newEnd);
+        const bStart = toMin(dp.start_time), bEnd = toMin(dp.end_time);
+        return aStart < bEnd && bStart < aEnd;
+    });
 
     async function addDaypart() {
         setError(null);
@@ -59,10 +91,9 @@ export default function DaypartsPage() {
     }
 
     async function deleteDaypart(id: number) {
-        if (!confirm("Delete this daypart?")) return;
         setError(null);
-        try { await api.deleteDaypart(id); await load(); }
-        catch (e) { setError(String(e)); }
+        try { await api.deleteDaypart(id); setDeleteTarget(null); await load(); }
+        catch (e) { setError(String(e)); setDeleteTarget(null); }
     }
 
     return (
@@ -91,11 +122,17 @@ export default function DaypartsPage() {
                         <input type="time" value={newEnd} onChange={(e) => setNewEnd(e.target.value)} />
                     </div>
                     <div>
-                        <Button onClick={addDaypart} disabled={!newLabel.trim()} size="md" className="w-full">
+                        <Button onClick={addDaypart} disabled={!newLabel.trim() || !newEndValid || !!newOverlapsExisting} size="md" className="w-full">
                             Add
                         </Button>
                     </div>
                 </div>
+                {!newEndValid && newStart && newEnd && (
+                    <p className="text-xs text-red-500 mt-2">⚠ End time must be after start time.</p>
+                )}
+                {newOverlapsExisting && (
+                    <p className="text-xs text-amber-600 mt-2">⚠ This time range overlaps an existing daypart.</p>
+                )}
             </Card>
 
             {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
@@ -119,7 +156,7 @@ export default function DaypartsPage() {
                         </thead>
                         <tbody>
                             {items.map((dp, idx) => (
-                                <tr key={dp.id}>
+                                <tr key={dp.id} className={existingOverlaps.has(dp.id) ? "bg-amber-50" : ""}>
                                     <td className="!pl-5">
                                         <input
                                             type="text"
@@ -167,8 +204,11 @@ export default function DaypartsPage() {
                                     <td className="!pr-5">
                                         <div className="flex gap-2 justify-end">
                                             <Button variant="secondary" size="sm" onClick={() => saveDaypart(dp)}>Save</Button>
-                                            <Button variant="danger" size="sm" onClick={() => deleteDaypart(dp.id)}>Delete</Button>
+                                            <Button variant="danger" size="sm" onClick={() => setDeleteTarget(dp.id)}>Delete</Button>
                                         </div>
+                                        {existingOverlaps.has(dp.id) && (
+                                            <div className="text-[10px] text-amber-600 mt-1">⚠ Overlaps another daypart</div>
+                                        )}
                                     </td>
                                 </tr>
                             ))}
@@ -176,6 +216,15 @@ export default function DaypartsPage() {
                     </table>
                 </Card>
             )}
+            <ConfirmDialog
+                open={deleteTarget !== null}
+                title="Delete daypart?"
+                message="This will permanently delete this daypart. Existing baseline data referencing it may be affected."
+                confirmLabel="Delete"
+                variant="danger"
+                onConfirm={() => { if (deleteTarget !== null) deleteDaypart(deleteTarget); }}
+                onCancel={() => setDeleteTarget(null)}
+            />
         </div>
     );
 }

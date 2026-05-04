@@ -34,7 +34,8 @@ export default function AiAdvisorChat() {
         setLoading(true);
 
         try {
-            const res = await api.askAdvisor(newMessages, weekId);
+            const windowedMessages = newMessages.slice(-20);
+            const res = await api.askAdvisor(windowedMessages, weekId);
             setMessages((prev) => [
                 ...prev,
                 { role: "assistant", content: res.reply },
@@ -62,6 +63,7 @@ export default function AiAdvisorChat() {
                     ${open ? "rotate-0 scale-90" : "rotate-0 scale-100"}
                     text-white text-2xl`}
                 title="AI Advisor"
+                aria-label={open ? "Close AI Advisor" : "Open AI Advisor"}
             >
                 {open ? "✕" : "🤖"}
             </button>
@@ -151,6 +153,7 @@ export default function AiAdvisorChat() {
                                 className="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500
                                     disabled:opacity-40 disabled:cursor-not-allowed
                                     transition-colors text-white text-sm font-medium"
+                                aria-label="Send message"
                             >
                                 Send
                             </button>

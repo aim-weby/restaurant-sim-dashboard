@@ -1,45 +1,87 @@
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { ExperimentResult, ExperimentsResponse } from "../api/types";
+import type { BaselineWeek, Scenario, SimulationResponse, MetricSummary } from "../api/types";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
 import StatusBadge from "../components/StatusBadge";
+import { useSimDefaults } from "../hooks/useSimDefaults";
 
 const METRICS = [
-    { key: "revenue", label: "Revenue", icon: "💰", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
-    { key: "profit", label: "Profit", icon: "📈", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
-    { key: "served_groups", label: "Served", icon: "✅", fmt: (v: number) => v.toFixed(1) },
-    { key: "lost_groups", label: "Lost", icon: "❌", fmt: (v: number) => v.toFixed(2) },
-    { key: "avg_wait_food", label: "Avg Wait", icon: "⏱️", fmt: (v: number) => `${v.toFixed(1)} min` },
-    { key: "p90_wait_food", label: "P90 Wait", icon: "⏳", fmt: (v: number) => `${v.toFixed(1)} min` },
-    { key: "util_kitchen", label: "Kitchen Util.", icon: "👨‍🍳", fmt: (v: number) => `${(v * 100).toFixed(1)}%` },
+    { key: "finance.revenue", label: "Revenue", icon: "💰", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
+    { key: "finance.profit", label: "Profit", icon: "📈", fmt: (v: number) => `${v.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK` },
+    { key: "demand.served_groups", label: "Served", icon: "✅", fmt: (v: number) => v.toFixed(1) },
+    { key: "demand.lost_groups", label: "Lost", icon: "❌", fmt: (v: number) => v.toFixed(2) },
+    { key: "queue.wait_food", label: "Avg Wait", icon: "⏱️", fmt: (v: number) => `${v.toFixed(1)} min` },
+    { key: "util.kitchen", label: "Kitchen Util.", icon: "👨‍🍳", fmt: (v: number) => `${(v * 100).toFixed(1)}%` },
+    { key: "util.tables", label: "Table Util.", icon: "🪑", fmt: (v: number) => `${(v * 100).toFixed(1)}%` },
 ];
-
-const EXP_ICONS: Record<string, string> = {
-    baseline: "📋", add_kitchen_sat: "👨‍🍳", price_up_8: "💲", add_4_seats: "🪑", extend_fri_sat: "🌙", combined: "🔀",
-};
 
 export default function ExperimentsPage() {
     const toast = useToast();
-    const [searchParams] = useSearchParams();
-    const weekId = Number(searchParams.get("weekId") || 1);
+    const [searchParams, setSearchParams] = useSearchParams();
+    const weekIdFromUrl = searchParams.get("weekId") ? Number(searchParams.get("weekId")) : null;
 
-    const [data, setData] = useState<ExperimentsResponse | null>(null);
+    const [weeks, setWeeks] = useState<BaselineWeek[]>([]);
+    const [selectedWeekId, setSelectedWeekId] = useState<number | null>(weekIdFromUrl);
+    const weekId = selectedWeekId;
+
+    const [scenarios, setScenarios] = useState<Scenario[]>([]);
+    const [loadingScenarios, setLoadingScenarios] = useState(false);
+
+    const [results, setResults] = useState<Record<number, SimulationResponse>>({});
     const [loading, setLoading] = useState(false);
-    const [runs, setRuns] = useState(200);
-    const [seed, setSeed] = useState(42);
+    const { runs, setRuns, seed, setSeed } = useSimDefaults();
     const [elapsed, setElapsed] = useState<number | null>(null);
 
+    // Load available weeks
+    useEffect(() => {
+        api.listWeeks().then((w) => {
+            setWeeks(w);
+            if (!selectedWeekId && w.length > 0) {
+                const first = w[0].id;
+                setSelectedWeekId(first);
+                setSearchParams({ weekId: String(first) }, { replace: true });
+            }
+        }).catch((e) => toast.error(`Failed to load weeks: ${e}`));
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Load scenarios when week changes
+    useEffect(() => {
+        if (selectedWeekId == null) return;
+        setLoadingScenarios(true);
+        setScenarios([]);
+        setResults({});
+        setElapsed(null);
+        api.listScenarios(selectedWeekId)
+            .then((sc) => setScenarios(sc))
+            .catch((e) => { setScenarios([]); toast.error(`Failed to load scenarios: ${e}`); })
+            .finally(() => setLoadingScenarios(false));
+    }, [selectedWeekId]);
+
+    function changeWeek(id: number) {
+        setSelectedWeekId(id);
+        setSearchParams({ weekId: String(id) }, { replace: true });
+    }
+
     async function runAll() {
+        if (scenarios.length === 0 || weekId == null) return;
         setLoading(true);
         setElapsed(null);
+        setResults({});
         const t0 = Date.now();
         try {
-            const res = await api.runExperiments(weekId, runs, seed);
-            setData(res);
+            for (const s of scenarios) {
+                const res = await api.runSimulation({
+                    baseline_week_id: weekId,
+                    runs,
+                    seed: seed === "" ? null : Number(seed),
+                    overrides: s.params,
+                });
+                setResults((prev) => ({ ...prev, [s.id]: res }));
+            }
             setElapsed(Math.round((Date.now() - t0) / 1000));
         } catch (e) {
             toast.error(`Experiment failed: ${e}`);
@@ -49,8 +91,9 @@ export default function ExperimentsPage() {
     }
 
     function exportJson() {
-        if (!data) return;
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        if (Object.keys(results).length === 0) return;
+        const payload = { weekId, runs, seed, scenarios: scenarios.map(s => ({ ...s, result: results[s.id] ?? null })) };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url; a.download = `experiments_week${weekId}_${runs}runs.json`; a.click();
@@ -58,13 +101,15 @@ export default function ExperimentsPage() {
     }
 
     function exportCsv() {
-        if (!data) return;
-        const header = ["experiment", ...METRICS.map(m => m.label), ...METRICS.map(m => `Δ ${m.label}`), ...METRICS.map(m => `Δ% ${m.label}`)];
-        const rows = data.experiments.map(exp => {
-            const vals = METRICS.map(m => exp.summary[m.key]?.mean ?? 0);
-            const deltas = METRICS.map(m => exp.deltas?.[m.key]?.delta ?? 0);
-            const deltaPcts = METRICS.map(m => exp.deltas?.[m.key]?.delta_pct ?? 0);
-            return [exp.name, ...vals, ...deltas, ...deltaPcts].join(",");
+        if (Object.keys(results).length === 0) return;
+        const header = ["scenario", ...METRICS.map(m => m.label)];
+        const rows = scenarios.map(s => {
+            const r = results[s.id];
+            const vals = METRICS.map(m => {
+                const ms = r?.result?.metrics?.[m.key] as MetricSummary | undefined;
+                return ms?.mean ?? 0;
+            });
+            return [s.name, ...vals].join(",");
         });
         const csv = [header.join(","), ...rows].join("\n");
         const blob = new Blob([csv], { type: "text/csv" });
@@ -74,18 +119,36 @@ export default function ExperimentsPage() {
         URL.revokeObjectURL(url);
     }
 
+    // Find the baseline scenario (first scenario, or one named "baseline")
+    const baselineScenario = scenarios.find(s => s.name.toLowerCase().includes("baseline")) ?? scenarios[0] ?? null;
+    const baselineResult = baselineScenario ? results[baselineScenario.id] : null;
+
+    function getDelta(scenarioId: number, metricKey: string): { delta: number; delta_pct: number } | null {
+        if (!baselineResult || scenarioId === baselineScenario?.id) return null;
+        const scenarioResult = results[scenarioId];
+        if (!scenarioResult) return null;
+        const bMetric = baselineResult.result.metrics[metricKey] as MetricSummary | undefined;
+        const sMetric = scenarioResult.result.metrics[metricKey] as MetricSummary | undefined;
+        if (!bMetric || !sMetric) return null;
+        const delta = sMetric.mean - bMetric.mean;
+        const delta_pct = bMetric.mean !== 0 ? (delta / bMetric.mean) * 100 : 0;
+        return { delta, delta_pct };
+    }
+
     const deltaColor = (v: number, metric: string) => {
-        const inverted = ["avg_wait_food", "p90_wait_food", "lost_groups"].includes(metric);
-        if (v === 0) return "text-grey";
+        const inverted = ["queue.wait_food", "demand.lost_groups"].includes(metric);
+        if (Math.abs(v) < 0.01) return "text-grey";
         const isGood = inverted ? v < 0 : v > 0;
         return isGood ? "text-green-600" : "text-red-600";
     };
+
+    const completedCount = Object.keys(results).length;
 
     return (
         <div>
             <PageHeader
                 title="Experiment Runner"
-                subtitle={`Runs 6 predefined scenarios from the thesis spec against baseline week #${weekId}.`}
+                subtitle={weekId != null ? `Compare saved scenarios against the baseline for week #${weekId}.` : `Select a baseline week to begin.`}
             />
 
             {/* Controls */}
@@ -94,14 +157,27 @@ export default function ExperimentsPage() {
                     <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white text-sm shadow-lg shadow-indigo-500/20">🧪</div>
                         <div>
-                            <label className="block text-xs font-medium text-grey mb-1">Runs / experiment</label>
-                            <input
-                                type="number"
-                                value={runs}
-                                onChange={(e) => setRuns(Math.max(10, Number(e.target.value)))}
-                                className="!w-24"
-                            />
+                            <label className="block text-xs font-medium text-grey mb-1">Baseline Week</label>
+                            <select
+                                value={weekId ?? ""}
+                                onChange={(e) => changeWeek(Number(e.target.value))}
+                                className="!w-48"
+                            >
+                                {weeks.length === 0 && <option value="">Loading…</option>}
+                                {weeks.map((w) => (
+                                    <option key={w.id} value={w.id}>#{w.id} — {w.label}</option>
+                                ))}
+                            </select>
                         </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-grey mb-1">Runs / experiment</label>
+                        <input
+                            type="number"
+                            value={runs}
+                            onChange={(e) => setRuns(Math.max(10, Number(e.target.value)))}
+                            className="!w-24"
+                        />
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-grey mb-1">Seed</label>
@@ -112,7 +188,7 @@ export default function ExperimentsPage() {
                             className="!w-24"
                         />
                     </div>
-                    <Button onClick={runAll} disabled={loading}>
+                    <Button onClick={runAll} disabled={loading || scenarios.length === 0}>
                         {loading ? (
                             <span className="flex items-center gap-1.5">
                                 <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -123,13 +199,34 @@ export default function ExperimentsPage() {
                     {elapsed !== null && (
                         <span className="flex items-center gap-1.5 text-xs text-algae-dark font-medium">
                             <span className="w-2 h-2 rounded-full bg-algae-dark" />
-                            Done in {elapsed}s ({data?.experiment_count} × {runs} runs)
+                            Done in {elapsed}s ({completedCount} × {runs} runs)
                         </span>
                     )}
                 </div>
             </Card>
 
-            {data && (
+            {/* Empty state */}
+            {!loadingScenarios && scenarios.length === 0 && (
+                <Card className="p-8 text-center mb-6">
+                    <div className="text-3xl mb-3">🔬</div>
+                    <p className="text-sm text-grey mb-2">No scenarios found for week #{weekId ?? "?"}.</p>
+                    <p className="text-xs text-grey mb-4">Create scenarios in the Scenarios page for this baseline week first.</p>
+                    {weekId != null && (
+                        <Link to={`/baseline-weeks/${weekId}/scenarios`} className="inline-flex items-center gap-1.5 text-sm text-deep-blue hover:underline font-medium">
+                            → Create Scenarios
+                        </Link>
+                    )}
+                </Card>
+            )}
+
+            {loadingScenarios && (
+                <div className="flex items-center justify-center gap-2 py-8">
+                    <div className="w-5 h-5 border-2 border-deep-blue/30 border-t-deep-blue rounded-full animate-spin" />
+                    <span className="text-sm text-grey">Loading scenarios…</span>
+                </div>
+            )}
+
+            {completedCount > 0 && (
                 <>
                     {/* Export buttons */}
                     <div className="flex gap-2 mb-5">
@@ -139,41 +236,47 @@ export default function ExperimentsPage() {
 
                     {/* Experiment cards */}
                     <div className="space-y-4 mb-6">
-                        {data.experiments.map((exp: ExperimentResult) => (
-                            <Card key={exp.id} className="p-5 group hover:scale-[1.003] transition-transform duration-200" accent={exp.id === "baseline" ? "blue" : "none"}>
-                                <div className="flex justify-between items-baseline mb-4">
-                                    <div className="flex items-center gap-2.5">
-                                        <span className="text-xl">{EXP_ICONS[exp.id] ?? "🧪"}</span>
-                                        <div>
-                                            <span className="font-bold text-mariana">{exp.name}</span>
-                                            <span className="ml-2 text-xs text-grey">{exp.description}</span>
-                                        </div>
-                                    </div>
-                                    {exp.id === "baseline" && <StatusBadge variant="info">REFERENCE</StatusBadge>}
-                                </div>
-
-                                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-                                    {METRICS.map((m) => {
-                                        const mean = exp.summary[m.key]?.mean ?? 0;
-                                        const delta = exp.deltas?.[m.key];
-                                        return (
-                                            <div key={m.key} className="bg-mist/30 rounded-xl p-3 hover:bg-mist/50 transition-colors duration-200">
-                                                <div className="flex items-center gap-1 text-[10px] text-grey uppercase tracking-wider">
-                                                    <span>{m.icon}</span>
-                                                    <span>{m.label}</span>
-                                                </div>
-                                                <div className="text-sm font-bold text-mariana mt-1">{m.fmt(mean)}</div>
-                                                {delta && (
-                                                    <div className={`text-[10px] font-semibold mt-1 ${deltaColor(delta.delta, m.key)}`}>
-                                                        {delta.delta >= 0 ? "+" : ""}{m.fmt(delta.delta)} ({delta.delta_pct >= 0 ? "+" : ""}{delta.delta_pct.toFixed(1)}%)
-                                                    </div>
-                                                )}
+                        {scenarios.map((s) => {
+                            const r = results[s.id];
+                            if (!r) return null;
+                            const isBaseline = s.id === baselineScenario?.id;
+                            return (
+                                <Card key={s.id} className="p-5 group hover:scale-[1.003] transition-transform duration-200" accent={isBaseline ? "blue" : "none"}>
+                                    <div className="flex justify-between items-baseline mb-4">
+                                        <div className="flex items-center gap-2.5">
+                                            <span className="text-xl">🧪</span>
+                                            <div>
+                                                <span className="font-bold text-mariana">{s.name}</span>
+                                                <span className="ml-2 text-xs text-grey">id: {s.id}</span>
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </Card>
-                        ))}
+                                        </div>
+                                        {isBaseline && <StatusBadge variant="info">REFERENCE</StatusBadge>}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                                        {METRICS.map((m) => {
+                                            const ms = r.result.metrics[m.key] as MetricSummary | undefined;
+                                            const mean = ms?.mean ?? 0;
+                                            const delta = getDelta(s.id, m.key);
+                                            return (
+                                                <div key={m.key} className="bg-mist/30 rounded-xl p-3 hover:bg-mist/50 transition-colors duration-200">
+                                                    <div className="flex items-center gap-1 text-[10px] text-grey uppercase tracking-wider">
+                                                        <span>{m.icon}</span>
+                                                        <span>{m.label}</span>
+                                                    </div>
+                                                    <div className="text-sm font-bold text-mariana mt-1">{m.fmt(mean)}</div>
+                                                    {delta && (
+                                                        <div className={`text-[10px] font-semibold mt-1 ${deltaColor(delta.delta, m.key)}`}>
+                                                            {delta.delta >= 0 ? "+" : ""}{m.fmt(delta.delta)} ({delta.delta_pct >= 0 ? "+" : ""}{delta.delta_pct.toFixed(1)}%)
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </Card>
+                            );
+                        })}
                     </div>
 
                     {/* Comparison matrix */}
@@ -195,28 +298,34 @@ export default function ExperimentsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data.experiments.map((exp) => (
-                                        <tr key={exp.id} className={exp.id === "baseline" ? "bg-deep-blue/5" : ""}>
-                                            <td className="!pl-5 font-semibold">
-                                                <span className="mr-1">{EXP_ICONS[exp.id] ?? "🧪"}</span>
-                                                {exp.name}
-                                            </td>
-                                            {METRICS.map((m) => {
-                                                const mean = exp.summary[m.key]?.mean ?? 0;
-                                                const delta = exp.deltas?.[m.key];
-                                                return (
-                                                    <td key={m.key} className="text-right">
-                                                        {m.fmt(mean)}
-                                                        {delta && (
-                                                            <span className={`ml-1 text-[10px] font-semibold ${deltaColor(delta.delta, m.key)}`}>
-                                                                ({delta.delta_pct >= 0 ? "+" : ""}{delta.delta_pct.toFixed(1)}%)
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                );
-                                            })}
-                                        </tr>
-                                    ))}
+                                    {scenarios.map((s) => {
+                                        const r = results[s.id];
+                                        if (!r) return null;
+                                        const isBaseline = s.id === baselineScenario?.id;
+                                        return (
+                                            <tr key={s.id} className={isBaseline ? "bg-deep-blue/5" : ""}>
+                                                <td className="!pl-5 font-semibold">
+                                                    <span className="mr-1">🧪</span>
+                                                    {s.name}
+                                                </td>
+                                                {METRICS.map((m) => {
+                                                    const ms = r.result.metrics[m.key] as MetricSummary | undefined;
+                                                    const mean = ms?.mean ?? 0;
+                                                    const delta = getDelta(s.id, m.key);
+                                                    return (
+                                                        <td key={m.key} className="text-right">
+                                                            {m.fmt(mean)}
+                                                            {delta && (
+                                                                <span className={`ml-1 text-[10px] font-semibold ${deltaColor(delta.delta, m.key)}`}>
+                                                                    ({delta.delta_pct >= 0 ? "+" : ""}{delta.delta_pct.toFixed(1)}%)
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -232,18 +341,20 @@ export default function ExperimentsPage() {
                             </div>
                         </div>
                         {(() => {
-                            const baseline = data.experiments.find((e) => e.id === "baseline");
-                            if (!baseline) return <p className="text-sm text-grey">No baseline found.</p>;
-                            const baselineProfit = baseline.summary["profit"]?.mean ?? 0;
-                            const impacts = data.experiments
-                                .filter((e) => e.id !== "baseline" && e.deltas?.["profit"])
-                                .map((e) => ({
-                                    name: e.name,
-                                    icon: EXP_ICONS[e.id] ?? "🧪",
-                                    delta: e.deltas!["profit"].delta,
-                                    pct: e.deltas!["profit"].delta_pct,
-                                }))
+                            if (!baselineResult) return <p className="text-sm text-grey">Run experiments to see results.</p>;
+                            const baselineProfit = (baselineResult.result.metrics["finance.profit"] as MetricSummary | undefined)?.mean ?? 0;
+
+                            const impacts = scenarios
+                                .filter((s) => s.id !== baselineScenario?.id && results[s.id])
+                                .map((s) => {
+                                    const sProfit = (results[s.id].result.metrics["finance.profit"] as MetricSummary | undefined)?.mean ?? 0;
+                                    const delta = sProfit - baselineProfit;
+                                    const pct = baselineProfit !== 0 ? (delta / baselineProfit) * 100 : 0;
+                                    return { name: s.name, delta, pct };
+                                })
                                 .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+                            if (impacts.length === 0) return <p className="text-sm text-grey">No non-baseline scenarios with results.</p>;
 
                             const maxDelta = Math.max(...impacts.map((i) => Math.abs(i.delta)), 1);
 
@@ -254,8 +365,8 @@ export default function ExperimentsPage() {
                                         const isPositive = imp.delta >= 0;
                                         return (
                                             <div key={imp.name} className="flex items-center gap-3">
-                                                <div className="w-36 text-xs text-right text-mariana font-medium truncate flex items-center justify-end gap-1.5">
-                                                    <span>{imp.icon}</span>
+                                                <div className="w-64 text-xs text-right text-mariana font-medium truncate flex items-center justify-end gap-1.5">
+                                                    <span>🧪</span>
                                                     <span>{imp.name}</span>
                                                 </div>
                                                 <div className="flex-1 relative h-6">
@@ -270,7 +381,7 @@ export default function ExperimentsPage() {
                                                         style={{ width: `${barWidth / 2}%` }}
                                                     />
                                                 </div>
-                                                <div className={`w-28 text-xs font-bold text-right ${isPositive ? "text-emerald-600" : "text-red-600"}`}>
+                                                <div className={`w-40 text-xs font-bold text-right ${isPositive ? "text-emerald-600" : "text-red-600"}`}>
                                                     {isPositive ? "+" : ""}{imp.delta.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK
                                                     <span className="text-[10px] font-normal text-grey ml-1">({isPositive ? "+" : ""}{imp.pct.toFixed(1)}%)</span>
                                                 </div>
@@ -278,9 +389,9 @@ export default function ExperimentsPage() {
                                         );
                                     })}
                                     <div className="flex items-center gap-3 pt-2 border-t border-mist-dark/20">
-                                        <div className="w-36 text-[10px] text-right text-grey">Baseline Profit</div>
+                                        <div className="w-64 text-[10px] text-right text-grey">Baseline Profit</div>
                                         <div className="flex-1" />
-                                        <div className="w-28 text-xs font-bold text-right text-mariana">
+                                        <div className="w-40 text-xs font-bold text-right text-mariana">
                                             {baselineProfit.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} CZK
                                         </div>
                                     </div>

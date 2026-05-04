@@ -23,11 +23,11 @@ export default function VenueSettingsPage() {
         try {
             const updated = await api.updateVenue({
                 name: venue.name,
-                timezone: venue.timezone,
-                currency: venue.currency,
+                timezone: venue.timezone ?? "Europe/Prague",
+                currency: venue.currency ?? "CZK",
                 seats_total: Number(venue.seats_total),
                 tables_count: Number(venue.tables_count),
-                mode: venue.mode,
+                mode: "dinein",
             });
             setVenue(updated);
             setSaved(true);
@@ -44,8 +44,6 @@ export default function VenueSettingsPage() {
 
     const fields = [
         { label: "Restaurant Name", key: "name" as const, type: "text" },
-        { label: "Timezone", key: "timezone" as const, type: "text" },
-        { label: "Currency", key: "currency" as const, type: "text" },
         { label: "Total Seats", key: "seats_total" as const, type: "number" },
         { label: "Table Count", key: "tables_count" as const, type: "number" },
     ];
@@ -71,17 +69,6 @@ export default function VenueSettingsPage() {
                             />
                         </div>
                     ))}
-
-                    <div>
-                        <label className="block text-sm font-medium text-mariana mb-1.5">Operating Mode</label>
-                        <select
-                            value={venue.mode}
-                            onChange={(e) => setVenue({ ...venue, mode: e.target.value })}
-                        >
-                            <option value="dinein">Dine-in</option>
-                            <option value="delivery_only">Delivery Only</option>
-                        </select>
-                    </div>
 
                     {error && <p className="text-sm text-red-600">{error}</p>}
 

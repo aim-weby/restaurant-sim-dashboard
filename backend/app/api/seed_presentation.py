@@ -540,9 +540,10 @@ def seed_presentation(db: Session = Depends(get_db)):
     # Stress test: everything goes wrong simultaneously
     # Kitchen down 2 on Saturday, demand +30%, food cost 38%, high fixed costs
     _add_scenario(db, week3.id, "Noční můra – vše špatně najednou", {
-        "arrivals_multiplier": 1.30,
-        "food_cost_pct_override": 0.38,
-        "fixed_cost_week_override": 22000,
+        # Demand drops -30 %: bad reviews after a chaotic Saturday go viral overnight
+        "arrivals_multiplier": 0.70,
+        "food_cost_pct_override": 0.38,      # ingredient prices spike (+8 pp)
+        "fixed_cost_week_override": 22000,   # emergency repairs / extra cleaning
         "staffing_changes": [
             # Saturday skeleton crew — 2 cooks and 2 waiters call in sick
             {"weekday": 5, "daypart_id": dp_ids[0], "role": "kitchen", "delta_staff": -2},

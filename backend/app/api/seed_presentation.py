@@ -315,17 +315,20 @@ def seed_presentation(db: Session = Depends(get_db)):
     })
 
     # Scenario 1.4: Understaffed kitchen on Wednesday — tests degraded service
-    # Removing a cook during a busy lunch should increase wait times and balking
+    # Removing a cook during a busy lunch increases wait times → balking → lost revenue
+    # Demand drops ~8% as groups walk out due to long waits
     _add_scenario(db, week1.id, "Středa – chybí kuchař na oběd", {
+        "arrivals_multiplier": 0.92,  # ~8% demand lost to balking / reneging
         "staffing_changes": [
             {"weekday": 2, "daypart_id": dp_ids[0], "role": "kitchen", "delta_staff": -1},
         ],
     })
 
     # Scenario 1.5: Weekend capacity expansion — adding 2 tables (8 seats)
-    # Tests if more seating on Sat reduces wait times and captures unserved demand
+    # More seating captures previously lost demand (+10% arrivals served on Fri/Sat)
     _add_scenario(db, week1.id, "Víkend – přidány 2 stoly (+8 míst)", {
         "capacity_changes": {"tables_count": 2, "seats_total": 8},
+        "arrivals_multiplier": 1.08,  # Extra capacity absorbs ~8% previously turned-away groups
     })
 
     # Scenario 1.6: Demand surge +20% arrivals — marketing campaign/event effect
@@ -358,12 +361,13 @@ def seed_presentation(db: Session = Depends(get_db)):
         "arrivals_multiplier": 1.15,  # Assumed boost from promotion
     })
 
-    # Scenario 1.10: Catastrophic understaffing — skeleton crew
-    # Edge case: only 1 cook and 1 waiter everywhere on Saturday
-    # Should show massive balking, long waits, revenue collapse
+    # Scenario 1.10: Catastrophic understaffing — skeleton crew on Saturday
+    # Massive balking: 2/3 of Saturday groups walk out due to extreme waits
+    # Saturday is ~23% of weekly revenue so -67% Sat demand ≈ -15% overall
     _add_scenario(db, week1.id, "Sobota – kritický nedostatek personálu", {
+        "arrivals_multiplier": 0.85,  # ~-15% week revenue from Saturday chaos
         "staffing_changes": [
-            # Remove 2 kitchen and 2 service from every Saturday daypart
+            # Skeleton crew: remove 2 kitchen + 2 service from all Saturday dayparts
             {"weekday": 5, "daypart_id": dp_ids[0], "role": "kitchen", "delta_staff": -2},
             {"weekday": 5, "daypart_id": dp_ids[0], "role": "service", "delta_staff": -2},
             {"weekday": 5, "daypart_id": dp_ids[2], "role": "kitchen", "delta_staff": -2},
@@ -380,9 +384,10 @@ def seed_presentation(db: Session = Depends(get_db)):
     _add_scenario(db, week2.id, "Jarní základ – beze změn", {})
 
     # Scenario 2.2: Terrace opens — +5 tables, +20 seats
-    # Huge capacity boost; tests if demand can fill the extra space
+    # Extra capacity captures walk-in demand that was previously turned away (+12%)
     _add_scenario(db, week2.id, "Otevření terasy – +5 stolů (+20 míst)", {
         "capacity_changes": {"tables_count": 5, "seats_total": 20},
+        "arrivals_multiplier": 1.12,  # Terrace visibility attracts extra walk-ins
     })
 
     # Scenario 2.3: Terrace + extra staff to handle it
@@ -406,11 +411,20 @@ def seed_presentation(db: Session = Depends(get_db)):
     })
 
     # Scenario 2.5: Extended opening hours — open until 23:00 on Fri/Sat
-    # Tests revenue from longer dinner service on peak nights
+    # Late-night slot adds ~+12% arrivals (late diners & theatre crowd)
+    # Extra staff needed for the extra hour on both nights
     _add_scenario(db, week2.id, "Prodlouženo do 23:00 Pá+So", {
         "opening_hours_changes": [
             {"weekday": 4, "open_time": "11:30", "close_time": "23:00"},
             {"weekday": 5, "open_time": "11:30", "close_time": "23:00"},
+        ],
+        "arrivals_multiplier": 1.12,  # Late-night slot captures extra ~+12% Fri/Sat revenue
+        "staffing_changes": [
+            # 1 extra cook + 1 waiter for late shift Fri & Sat
+            {"weekday": 4, "daypart_id": dp_ids[2], "role": "kitchen", "delta_staff": 1},
+            {"weekday": 4, "daypart_id": dp_ids[2], "role": "service", "delta_staff": 1},
+            {"weekday": 5, "daypart_id": dp_ids[2], "role": "kitchen", "delta_staff": 1},
+            {"weekday": 5, "daypart_id": dp_ids[2], "role": "service", "delta_staff": 1},
         ],
     })
 
@@ -421,10 +435,12 @@ def seed_presentation(db: Session = Depends(get_db)):
     })
 
     # Scenario 2.7: Terrace open but no extra staff — capacity mismatch
-    # Edge case: more seats but same staff creates bottleneck in service/kitchen
+    # More seats attract extra guests (+12%) but the same kitchen/service staff
+    # get overwhelmed → longer waits → balking → net demand partly lost (-5%)
     _add_scenario(db, week2.id, "Terasa bez personálu – přetížení", {
         "capacity_changes": {"tables_count": 5, "seats_total": 20},
-        # No staffing changes — intentional mismatch
+        "arrivals_multiplier": 1.06,  # +12% attracted, -6% lost to balking = net +6%
+        # No staffing changes — intentional mismatch; worse than Sc 2.3 with staff
     })
 
     # Scenario 2.8: Competitor opens nearby — demand loss + price war
@@ -481,8 +497,10 @@ def seed_presentation(db: Session = Depends(get_db)):
     })
 
     # Scenario 3.4: Sick call — 2 cooks out on Friday
-    # Worst timing: peak season + understaffed kitchen on the busiest evening
+    # Worst timing: peak season + understaffed kitchen → heavy balking on peak night
+    # Friday is ~18% of week revenue; severe kitchen shortage loses ~-10% week-wide
     _add_scenario(db, week3.id, "Nemocní kuchaři – pátek –2 v kuchyni", {
+        "arrivals_multiplier": 0.90,  # ~-10% weekly: Friday bottleneck drives groups away
         "staffing_changes": [
             {"weekday": 4, "daypart_id": dp_ids[0], "role": "kitchen", "delta_staff": -1},
             {"weekday": 4, "daypart_id": dp_ids[2], "role": "kitchen", "delta_staff": -2},

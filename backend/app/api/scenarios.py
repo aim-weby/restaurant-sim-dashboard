@@ -24,7 +24,7 @@ def list_scenarios(week_id: int, db: Session = Depends(get_db)):
     items = (
         db.query(SimulationScenario)
         .filter(SimulationScenario.baseline_week_id == week_id)
-        .order_by(SimulationScenario.id.desc())
+        .order_by(SimulationScenario.id.asc())
         .all()
     )
 

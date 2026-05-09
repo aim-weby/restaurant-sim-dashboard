@@ -396,7 +396,7 @@ def simulate_week(
 
         start_wait_food = env.now
         if sim_params.balking_wait_food_limit > 0:
-            remaining_food_patience = sim_params.balking_wait_food_limit - (env.now - seated_at)
+            remaining_food_patience = sim_params.balking_wait_food_limit - wait_table
             if remaining_food_patience <= 0:
                 yield tables.put(ps)
                 m.lost_groups += 1

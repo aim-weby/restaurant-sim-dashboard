@@ -119,8 +119,15 @@ export default function ExperimentsPage() {
         URL.revokeObjectURL(url);
     }
 
-    // Find the baseline scenario (first scenario, or one named "baseline")
-    const baselineScenario = scenarios.find(s => s.name.toLowerCase().includes("baseline")) ?? scenarios[0] ?? null;
+    // Find the baseline scenario: prefer one explicitly named "baseline" or "beze změn"
+    // (all three weeks have a no-change reference scenario as their first entry).
+    // Sort by id ascending first so the [0] fallback always picks the week's first scenario.
+    const sortedScenarios = [...scenarios].sort((a, b) => a.id - b.id);
+    const baselineScenario =
+        sortedScenarios.find(s => s.name.toLowerCase().includes("baseline")) ??
+        sortedScenarios.find(s => s.name.toLowerCase().includes("beze změn")) ??
+        sortedScenarios[0] ??
+        null;
     const baselineResult = baselineScenario ? results[baselineScenario.id] : null;
 
     function getDelta(scenarioId: number, metricKey: string): { delta: number; delta_pct: number } | null {
@@ -236,7 +243,7 @@ export default function ExperimentsPage() {
 
                     {/* Experiment cards */}
                     <div className="space-y-4 mb-6">
-                        {scenarios.map((s) => {
+                        {sortedScenarios.map((s) => {
                             const r = results[s.id];
                             if (!r) return null;
                             const isBaseline = s.id === baselineScenario?.id;
@@ -298,7 +305,7 @@ export default function ExperimentsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {scenarios.map((s) => {
+                                    {sortedScenarios.map((s) => {
                                         const r = results[s.id];
                                         if (!r) return null;
                                         const isBaseline = s.id === baselineScenario?.id;

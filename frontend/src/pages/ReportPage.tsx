@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/endpoints";
 import { n, fmtCurrency, fmtPercent, fmtValue, WEEKDAYS } from "../utils/format";
-import type { BaselineCell, KpisResponse, BaselineWeek, Scenario, ScenarioKpisResponse, SimulationResponse, DataHealthResponse, MetricSummary } from "../api/types";
+import type { BaselineCell, KpisResponse, BaselineWeek, Scenario, SimulationResponse, DataHealthResponse, MetricSummary } from "../api/types";
 import { ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, AreaChart, Area, Legend, ComposedChart, Line } from "recharts";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
@@ -26,7 +26,7 @@ export default function ReportPage() {
     const [health, setHealth] = useState<DataHealthResponse | null>(null);
 
     const [scenarios, setScenarios] = useState<Scenario[]>([]);
-    const [detKpis, setDetKpis] = useState<Record<number, ScenarioKpisResponse>>({});
+
     const [runningScenarioId, setRunningScenarioId] = useState<number | null>(null);
     const [scenarioResults, setScenarioResults] = useState<Record<number, SimulationResponse>>({});
 
@@ -54,9 +54,7 @@ export default function ReportPage() {
             try {
                 const [k, g, sc, h] = await Promise.all([api.getKpis(weekId), api.getBaselineData(weekId), api.listScenarios(weekId), api.getHealth(weekId).catch(() => null)]);
                 setKpis(k); setGrid(g); setScenarios(sc); setHealth(h); setScenarioResults({});
-                const kpiMap: Record<number, ScenarioKpisResponse> = {};
-                await Promise.all(sc.map(async (s) => { try { kpiMap[s.id] = await api.getScenarioKpis(s.id); } catch { } }));
-                setDetKpis(kpiMap);
+
             } catch (e) { setError(String(e)); }
             finally { setLoadingWeek(false); }
         }
@@ -91,7 +89,7 @@ export default function ReportPage() {
     const compareMetrics = useMemo(() => ["finance.profit", "finance.revenue", "finance.profit_margin", "finance.prime_cost_ratio", "demand.lost_groups"], []);
 
     function exportJson() {
-        const payload = { selected_week_id: selectedWeekId, baseline_kpis: kpis, baseline_grid: grid, scenarios, scenario_results: scenarioResults, deterministic_deltas: detKpis, health, run_settings: { runs, seed: seed === "" ? null : Number(seed) }, exported_at: new Date().toISOString() };
+        const payload = { selected_week_id: selectedWeekId, baseline_kpis: kpis, baseline_grid: grid, scenarios, scenario_results: scenarioResults, health, run_settings: { runs, seed: seed === "" ? null : Number(seed) }, exported_at: new Date().toISOString() };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `bp-report-week-${selectedWeekId ?? "na"}.json`; a.click(); URL.revokeObjectURL(url);
     }

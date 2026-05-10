@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
-import type { Scenario, ScenarioKpisResponse, SimulationResponse, StaffingChange, SimulationOverrides } from "../api/types";
+import type { Scenario, SimulationResponse, StaffingChange, SimulationOverrides } from "../api/types";
 import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { fmtCurrency, fmtValue, WEEKDAYS } from "../utils/format";
+import { fmtValue, WEEKDAYS } from "../utils/format";
 import { useSimDefaults } from "../hooks/useSimDefaults";
 
 function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
@@ -68,7 +68,7 @@ export default function ScenariosPage() {
 
     const [items, setItems] = useState<Scenario[]>([]);
     const [results, setResults] = useState<Record<number, SimulationResponse>>({});
-    const [detKpis, setDetKpis] = useState<Record<number, ScenarioKpisResponse>>({});
+
     const [running, setRunning] = useState<number | null>(null);
     const [runAllRunning, setRunAllRunning] = useState(false);
 
@@ -94,9 +94,7 @@ export default function ScenariosPage() {
         try {
             const [sc, dp] = await Promise.all([api.listScenarios(week), api.listDayparts()]);
             setItems(sc); setDayparts(dp.map((d) => ({ id: d.id, label: d.label })));
-            const kpiMap: Record<number, ScenarioKpisResponse> = {};
-            await Promise.all(sc.map(async (s) => { try { kpiMap[s.id] = await api.getScenarioKpis(s.id); } catch { } }));
-            setDetKpis(kpiMap);
+
             if (dp.length > 0 && deltaDaypartId === null) setDeltaDaypartId(dp[0].id);
         } catch (e) { setError(String(e)); }
         finally { setInitialLoading(false); }

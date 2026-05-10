@@ -36,7 +36,7 @@ class InsightsRequest(BaseModel):
 
 
 class AiInsight(BaseModel):
-    category: str  # "revenue", "costs", "operations", "demand", "staffing"
+    category: str  # "revenue", "costs", "demand", "staffing"
     severity: str  # "info", "warning", "critical", "opportunity"
     title: str
     text: str
@@ -74,18 +74,23 @@ You will receive KPI data and health metrics for a restaurant's baseline week.
 
 Analyze the data and return EXACTLY 3-5 actionable insights as a JSON array.
 Each insight must have these fields:
-- "category": one of "revenue", "costs", "operations", "demand", "staffing"
+- "category": one of "revenue", "costs", "demand", "staffing"
 - "severity": one of "info", "warning", "critical", "opportunity"
 - "title": short headline (max 10 words)
 - "text": 1-2 sentence analysis of the finding
 - "recommendation": 1 concrete action step
 
-Focus on:
-1. Profit margin health and cost structure
-2. Demand patterns (peak vs low periods)
-3. Staffing efficiency
-4. Revenue optimization opportunities
-5. Operational bottlenecks
+Focus ONLY on data that is actually present:
+1. Profit margin health and cost structure (finance metrics)
+2. Demand patterns — peak vs. low periods, group sizes, average spend
+3. Staffing cost efficiency relative to revenue
+4. Revenue and pricing optimization opportunities
+
+CRITICAL RULES:
+- NEVER generate an insight about data that is missing, empty, or not provided.
+- If a section of metrics is absent or an empty object {{}}, ignore that section entirely.
+- Do NOT comment on the absence of data — simply skip that category.
+- Focus only on what can be directly observed from the numbers given.
 
 Return ONLY valid JSON array, no markdown, no explanation outside the array."""
 
@@ -122,18 +127,24 @@ def ai_insights(req: InsightsRequest, db: Session = Depends(get_db)):
     except Exception:
         pass
 
-    # Build context message
+    # Build context — only include sections that have data
+    kpis = kpi_data.get('kpis', {})
+    finance_kpis = {k: v for k, v in kpis.items() if k.startswith('finance.')}
+    demand_kpis  = {k: v for k, v in kpis.items() if k.startswith('demand.')}
+    ops_kpis     = {k: v for k, v in kpis.items() if k.startswith('operations.')}
+
     context = f"""## Restaurant KPIs for Baseline Week (ID: {req.baseline_week_id})
 
 ### Financial Metrics
-{json.dumps({k: v for k, v in kpi_data.get('kpis', {}).items() if k.startswith('finance.')}, indent=2, default=str)}
+{json.dumps(finance_kpis, indent=2, default=str)}
 
 ### Demand Metrics
-{json.dumps({k: v for k, v in kpi_data.get('kpis', {}).items() if k.startswith('demand.')}, indent=2, default=str)}
-
-### Operations Metrics
-{json.dumps({k: v for k, v in kpi_data.get('kpis', {}).items() if k.startswith('operations.')}, indent=2, default=str)}
+{json.dumps(demand_kpis, indent=2, default=str)}
 """
+    # Only include operations section if data actually exists (requires a prior simulation run)
+    if ops_kpis:
+        context += f"\n### Operations Metrics (from simulation)\n{json.dumps(ops_kpis, indent=2, default=str)}\n"
+
     if health_data:
         context += f"\n### Data Health\n{json.dumps(health_data, indent=2, default=str)}"
 

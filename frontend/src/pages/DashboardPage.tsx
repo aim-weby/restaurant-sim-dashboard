@@ -488,7 +488,7 @@ export default function DashboardPage() {
                                     <span className="text-lg">{m.icon}</span>
                                 </div>
                                 <div className="text-lg font-extrabold text-mariana mt-1">{has ? m.fmt(Number(m.scen)) : "—"}</div>
-                                <div className="text-[10px] text-grey mt-0.5">baseline: {m.fmt(Number(m.base))}</div>
+                                <div className="text-[10px] text-grey mt-0.5" title="Deterministic sum from raw baseline data (no randomness or capacity model)">det. baseline: {m.fmt(Number(m.base))}</div>
                                 {has && (
                                     <div className={`inline-flex items-center gap-1 mt-2 px-2 py-0.5 rounded-full text-[10px] font-bold ${isPositive ? "bg-green-100 text-green-700" : isNegative ? "bg-red-100 text-red-700" : "bg-slate-100 text-grey"}`}>
                                         {isPositive ? "▲" : isNegative ? "▼" : "●"} {m.key === "demand.lost_groups" ? d.toFixed(2) : fmtCurrency(Math.abs(d)).replace("Kč", "").trim() + " Kč"}
@@ -500,6 +500,9 @@ export default function DashboardPage() {
                 </div>
 
                 {scenarioRun && <p className="text-[10px] text-grey mt-3">Last run: {scenarioRun.result.runs} runs completed</p>}
+                <p className="text-[10px] text-grey/70 mt-1 italic">
+                    ℹ️ Small differences from det. baseline are expected — the simulation uses stochastic demand noise and models capacity constraints (balking), which the deterministic baseline does not.
+                </p>
             </Card>
 
             {/* Heatmap */}

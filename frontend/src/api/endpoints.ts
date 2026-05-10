@@ -163,10 +163,19 @@ export const api = {
             method: "POST",
             body: JSON.stringify({ baseline_week_id: weekId }),
         }),
-    /** Send a chat message to the AI business advisor. History is sliding-window limited. */
-    askAdvisor: (messages: import("./types").AiChatMessage[], weekId?: number) =>
+    /** Send a chat message to the AI business advisor. History is sliding-window limited.
+     * @param pageContext Optional snapshot of the current page data (staffing, costs, etc.) */
+    askAdvisor: (
+        messages: import("./types").AiChatMessage[],
+        weekId?: number,
+        pageContext?: Record<string, unknown> | null,
+    ) =>
         fetchJson<import("./types").AiAdvisorResponse>("/ai/advisor", {
             method: "POST",
-            body: JSON.stringify({ messages, baseline_week_id: weekId ?? null }),
+            body: JSON.stringify({
+                messages,
+                baseline_week_id: weekId ?? null,
+                page_context: pageContext ?? null,
+            }),
         }),
 };

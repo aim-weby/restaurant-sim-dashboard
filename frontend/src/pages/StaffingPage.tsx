@@ -6,7 +6,7 @@ import { useToast } from "../components/Toast";
 import PageHeader from "../components/PageHeader";
 import Card from "../components/Card";
 import Button from "../components/Button";
-
+import { useSetAiPageContext } from "../context/AiPageContext";
 
 
 function hhmmToHours(hhmm: string): number {
@@ -34,11 +34,34 @@ export default function StaffingPage() {
     const [bulkRateRole, setBulkRateRole] = useState<"kitchen" | "service">("kitchen");
     const [bulkRateValue, setBulkRateValue] = useState<number>(180);
 
+    const setAiCtx = useSetAiPageContext();
+
     useEffect(() => {
         Promise.all([api.listDayparts(), api.listStaffing(), api.getOpeningHours()])
             .then(([dp, st, oh]) => { setDayparts(dp); setRows(st); setOpeningHours(oh); })
             .catch((e) => setError(String(e)));
     }, []);
+
+    // Push staffing data into AI context whenever rows/dayparts load
+    useEffect(() => {
+        if (rows.length === 0) return;
+        setAiCtx({
+            page: "staffing",
+            description: "User is on the Staffing Plan page",
+            total_labor_czk: rows.reduce((s, r) => s + r.staff_count * r.hourly_rate * r.hours_in_daypart, 0),
+            rows: rows.map((r) => ({
+                weekday: WEEKDAYS[r.weekday],
+                daypart_id: r.daypart_id,
+                role: r.role,
+                staff_count: r.staff_count,
+                hourly_rate_czk: r.hourly_rate,
+                hours: r.hours_in_daypart,
+                weekly_cost_czk: r.staff_count * r.hourly_rate * r.hours_in_daypart,
+            })),
+        });
+        return () => setAiCtx(null); // clear on unmount
+    }, [rows, setAiCtx]);
+
 
     // Daypart duration lookup
     const dpDurationMap = useMemo(() => {

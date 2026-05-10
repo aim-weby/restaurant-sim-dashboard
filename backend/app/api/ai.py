@@ -57,6 +57,7 @@ class ChatMessage(BaseModel):
 class AdvisorRequest(BaseModel):
     messages: List[ChatMessage]
     baseline_week_id: Optional[int] = None
+    page_context: Optional[dict] = None  # Current page data snapshot from the frontend
 
 
 class AdvisorResponse(BaseModel):
@@ -212,6 +213,17 @@ def ai_advisor(req: AdvisorRequest, db: Session = Depends(get_db)):
 """
         except Exception:
             pass
+
+    # Inject page-level context if the frontend provided it
+    if req.page_context:
+        system_content += f"""
+
+## Current Page Data (sent by the frontend)
+The user is currently viewing this data in the application:
+{json.dumps(req.page_context, indent=2, ensure_ascii=False, default=str)}
+
+Use this data when the user asks about items visible on their current page.
+"""
 
     messages = [{"role": "system", "content": system_content}]
     for m in req.messages[-10:]:  # Keep last 10 messages for context

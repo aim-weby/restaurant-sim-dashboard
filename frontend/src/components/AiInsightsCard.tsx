@@ -2,11 +2,11 @@ import { useState } from "react";
 import { api } from "../api/endpoints";
 import type { AiInsight } from "../api/types";
 
-const severityColors: Record<string, string> = {
-    critical: "bg-red-500/20 text-red-400 border-red-500/30",
-    warning: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    opportunity: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-    info: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+const severityConfig: Record<string, { border: string; badge: string; badgeText: string; icon: string }> = {
+    critical:    { border: "border-l-red-500",     badge: "bg-red-50 text-red-700 border border-red-200",       badgeText: "Critical",    icon: "🔴" },
+    warning:     { border: "border-l-amber-500",   badge: "bg-amber-50 text-amber-700 border border-amber-200", badgeText: "Warning",     icon: "🟡" },
+    opportunity: { border: "border-l-emerald-500", badge: "bg-emerald-50 text-emerald-700 border border-emerald-200", badgeText: "Opportunity", icon: "🟢" },
+    info:        { border: "border-l-blue-500",    badge: "bg-blue-50 text-blue-700 border border-blue-200",    badgeText: "Info",        icon: "🔵" },
 };
 
 const categoryIcons: Record<string, string> = {
@@ -105,24 +105,38 @@ export default function AiInsightsCard({ weekId }: { weekId: number }) {
             {/* Insights */}
             {!loading && fetched && insights.length > 0 && (
                 <div className="space-y-3">
-                    {insights.map((ins, i) => (
-                        <div
-                            key={i}
-                            className={`rounded-xl border p-4 ${severityColors[ins.severity] || severityColors.info}`}
-                        >
-                            <div className="flex items-center gap-2 mb-1">
-                                <span>{categoryIcons[ins.category] || "💡"}</span>
-                                <span className="font-semibold text-sm">{ins.title}</span>
-                                <span className="ml-auto text-xs opacity-60 uppercase tracking-wider">
-                                    {ins.category}
-                                </span>
+                    {insights.map((ins, i) => {
+                        const cfg = severityConfig[ins.severity] ?? severityConfig.info;
+                        return (
+                            <div
+                                key={i}
+                                className={`rounded-xl bg-white border-l-4 ${cfg.border} border border-gray-100 p-4 shadow-sm`}
+                            >
+                                {/* Title row */}
+                                <div className="flex items-start gap-2 mb-2">
+                                    <span className="text-lg leading-none mt-0.5">{categoryIcons[ins.category] || "💡"}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-semibold text-sm text-gray-900">{ins.title}</span>
+                                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${cfg.badge}`}>
+                                                {cfg.icon} {cfg.badgeText}
+                                            </span>
+                                            <span className="ml-auto text-xs text-gray-400 uppercase tracking-wider">
+                                                {ins.category}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* Body */}
+                                <p className="text-sm text-gray-600 mb-2 leading-relaxed">{ins.text}</p>
+                                {/* Recommendation */}
+                                <div className="flex items-start gap-1.5 bg-gray-50 rounded-lg px-3 py-2">
+                                    <span className="text-sm">💡</span>
+                                    <p className="text-sm font-medium text-gray-800">{ins.recommendation}</p>
+                                </div>
                             </div>
-                            <p className="text-sm opacity-80 mb-2">{ins.text}</p>
-                            <p className="text-sm font-medium">
-                                💡 {ins.recommendation}
-                            </p>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {tokensUsed > 0 && (
                         <p className="text-xs text-gray-500 text-right">
                             Tokens used: {tokensUsed} · Model: gpt-4o-mini

@@ -4,6 +4,7 @@ import { useKeyboardShortcuts, KeyboardShortcutHelp } from "../hooks/useKeyboard
 import type { Shortcut } from "../hooks/useKeyboardShortcuts";
 import Breadcrumbs from "../components/Breadcrumbs";
 import AiAdvisorChat from "../components/AiAdvisorChat";
+import { AiPageContextProvider, useAiPageContext } from "../context/AiPageContext";
 
 /* ── Sidebar icons (inline SVG paths) ── */
 const icons: Record<string, string> = {
@@ -62,7 +63,9 @@ const links = [
     },
 ];
 
-export default function Layout() {
+/** Inner layout — reads page context from context and forwards it to the chat. */
+function LayoutInner() {
+    const pageContext = useAiPageContext();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
     const navigate = useNavigate();
@@ -173,11 +176,19 @@ export default function Layout() {
                 </main>
             </div>
 
-            {/* AI Advisor Chat */}
-            <AiAdvisorChat />
+            {/* AI Advisor Chat — receives current page data snapshot */}
+            <AiAdvisorChat pageContext={pageContext} />
 
             {/* Keyboard shortcut help dialog */}
             <KeyboardShortcutHelp shortcuts={shortcuts} open={helpOpen} onClose={() => setHelpOpen(false)} />
         </div>
+    );
+}
+
+export default function Layout() {
+    return (
+        <AiPageContextProvider>
+            <LayoutInner />
+        </AiPageContextProvider>
     );
 }

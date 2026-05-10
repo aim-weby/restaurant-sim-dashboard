@@ -3,7 +3,12 @@ import { useParams } from "react-router-dom";
 import { api } from "../api/endpoints";
 import type { AiChatMessage } from "../api/types";
 
-export default function AiAdvisorChat() {
+interface AiAdvisorChatProps {
+    /** Optional snapshot of the current page's data — forwarded to the AI as context. */
+    pageContext?: Record<string, unknown> | null;
+}
+
+export default function AiAdvisorChat({ pageContext = null }: AiAdvisorChatProps) {
     const [open, setOpen] = useState(false);
     const [messages, setMessages] = useState<AiChatMessage[]>([]);
     const [input, setInput] = useState("");
@@ -35,7 +40,7 @@ export default function AiAdvisorChat() {
 
         try {
             const windowedMessages = newMessages.slice(-20);
-            const res = await api.askAdvisor(windowedMessages, weekId);
+            const res = await api.askAdvisor(windowedMessages, weekId, pageContext);
             setMessages((prev) => [
                 ...prev,
                 { role: "assistant", content: res.reply },
@@ -81,8 +86,14 @@ export default function AiAdvisorChat() {
                         <h4 className="text-sm font-semibold text-white flex items-center gap-2">
                             🤖 AI Restaurant Advisor
                         </h4>
-                        <p className="text-xs text-white/60">
-                            {weekId ? `Context: Week #${weekId}` : "General advice"}
+                        <p className="text-xs text-white/60 flex items-center gap-2">
+                            {weekId ? `Week #${weekId}` : "General advice"}
+                            {pageContext && (
+                                <span className="inline-flex items-center gap-1 bg-white/15 rounded-full px-2 py-0.5 text-white/80">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    Page data loaded
+                                </span>
+                            )}
                         </p>
                     </div>
 

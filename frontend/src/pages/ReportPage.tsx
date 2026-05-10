@@ -329,33 +329,7 @@ export default function ReportPage() {
                                         {scenarioResults[s.id] && <span className="text-xs text-algae-dark font-medium">✓ {scenarioResults[s.id].result.runs} runs</span>}
                                     </div>
 
-                                    {detKpis[s.id] && (() => {
-                                        const d = detKpis[s.id].deltas;
-                                        const deltaItems = [
-                                            { label: "Δ Revenue", key: "finance.revenue", fmt: fmtCurrency, better: "up" as const },
-                                            { label: "Δ Profit", key: "finance.profit", fmt: fmtCurrency, better: "up" as const },
-                                            { label: "Δ Labor", key: "finance.labor_cost", fmt: fmtCurrency, better: "down" as const },
-                                            { label: "Δ Arrivals", key: "demand.arrivals_groups", fmt: (v: number) => (v > 0 ? "+" : "") + v, better: "up" as const },
-                                        ];
-                                        return (
-                                            <div className="mt-3 grid grid-cols-4 gap-2">
-                                                {deltaItems.map((item) => {
-                                                    const val = d[item.key] ?? 0;
-                                                    const good = item.better === "up" ? val > 0 : val < 0;
-                                                    const neutral = Math.abs(val) < 0.01;
-                                                    const color = neutral ? "text-grey" : good ? "text-green-600" : "text-red-600";
-                                                    return (
-                                                        <div key={item.key} className="text-center bg-mist/20 rounded-lg p-2">
-                                                            <div className="text-[10px] text-grey">{item.label}</div>
-                                                            <div className={`text-sm font-bold ${color}`}>
-                                                                {val > 0 && item.key !== "demand.arrivals_groups" ? "+" : ""}{item.fmt(val)}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        );
-                                    })()}
+
 
                                     <details className="mt-2">
                                         <summary className="text-xs text-grey cursor-pointer hover:text-mariana transition">Overrides</summary>

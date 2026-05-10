@@ -93,8 +93,9 @@ export default function DashboardPage() {
                 ]);
                 setKpis(k); setGrid(g);
                 setDayparts(dp.map((d) => ({ id: d.id, label: d.label, sort_order: d.sort_order })));
-                setScenarios(sc); setHealth(h);
-                const first = sc[0]?.id;
+                const filteredScenarios = sc.filter((s) => !s.name.toLowerCase().includes("baseline") && !s.name.toLowerCase().includes("beze změn"));
+                setScenarios(filteredScenarios); setHealth(h);
+                const first = filteredScenarios[0]?.id;
                 if (first && selectedScenarioId === null) setSelectedScenarioId(first);
             } catch (e) { setError(String(e)); }
             finally { setLoading(false); }

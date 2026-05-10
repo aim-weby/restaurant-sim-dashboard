@@ -366,7 +366,13 @@ def simulate_week(
         """
         m.arrived_groups += 1
         arrival = env.now
-        ps = max(1, party_size)
+        # Option 1: Safety cap to prevent requesting more seats than total capacity
+        ps = min(seats_total, max(1, party_size))
+
+        # Option 2: Reject extremely large groups (no table big enough for > 8 people)
+        if ps > 8:
+            m.lost_groups += 1
+            return
 
         # Stage 1: Wait for table (seats)
         start_wait_table = env.now

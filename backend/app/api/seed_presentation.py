@@ -571,6 +571,33 @@ def seed_presentation(db: Session = Depends(get_db)):
         ],
     })
 
+    # --- TEST SCENARIOS FOR THESIS (Week 3) ---
+    _add_scenario(db, week3.id, "TEST S1: +1 kuchař (Obědy)", {
+        "staffing_changes": [
+            {"weekday": wd, "daypart_id": dp_ids[0], "role": "kitchen", "delta_staff": 1}
+            for wd in range(7)
+        ]
+    })
+    
+    _add_scenario(db, week3.id, "TEST S2: Zdražení o 8 %", {
+        "price_change": {"type": "percent", "value": 0.08}
+    })
+    
+    _add_scenario(db, week3.id, "TEST S3: Kombinace S1 + S2", {
+        "price_change": {"type": "percent", "value": 0.08},
+        "staffing_changes": [
+            {"weekday": wd, "daypart_id": dp_ids[0], "role": "kitchen", "delta_staff": 1}
+            for wd in range(7)
+        ]
+    })
+    
+    _add_scenario(db, week3.id, "TEST S4: Výpadek kuchaře (Obědy)", {
+        "staffing_changes": [
+            {"weekday": wd, "daypart_id": dp_ids[0], "role": "kitchen", "delta_staff": -1}
+            for wd in range(7)
+        ]
+    })
+
     # ─── Commit everything ────────────────────────────────────────────
     db.commit()
 
